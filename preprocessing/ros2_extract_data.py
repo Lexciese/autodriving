@@ -19,7 +19,7 @@ configx = GlobalConfig()
 BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosbag2_2025_11_05-11_00_19_0.mcap")
 DATADIR = configx.datadir
 PREFIX = str(date.today()) + "_route00"
-SLOP_NS = 150_000_000  # 0.15 s
+SLOP_NS = 150_000_000 # 0.15 s
 TOPICS = [
     '/gnss/fix',
     '/gnss/fix_velocity',
@@ -132,9 +132,17 @@ def main():
         conns = [c for c in reader.connections if c.topic in TOPICS]
         synchronizer = ApproximateTimeSynchronizer(TOPICS, SLOP_NS, save)
 
+        total = 0
+        for c in conns:
+            try:
+                total += c.msgcount
+            except AttributeError:
+                total = None
+                break
+
         msg_iter = reader.messages(connections=conns)
         if tqdm is not None:
-            msg_iter = tqdm(msg_iter, desc="Processing", unit="msg")
+            msg_iter = tqdm(msg_iter, total=total, desc="Processing", unit="msg")
 
         for conn, ts, raw in msg_iter:
             msg = reader.deserialize(raw, conn.msgtype)

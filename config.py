@@ -99,15 +99,19 @@ class GlobalConfig:
     n_class = len(SEG_CLASSES['colors'])
     
     #lidar setting, cek HDL-32E dan VLP32C LiDAR sensor datasheet
-    lidar_sensor = "hdl32e" #vlp32c hdl32e
+    lidar_sensor = "rs32" #vlp32c hdl32e mid360
     if lidar_sensor == "hdl32e":
         v_fov = [-30.67, 10.67] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]
-        dep_max = 100#/1.25 #dalam meter, baca datasheet np.sqrt(cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (cover_area_up[1]-((cover_area_up[1]-cover_area_up[0])/2))**2)
-        v_res_div = 55
-    else: #"vlp32c"
-        v_fov = [-25, 15] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]
-        dep_max = 200#/1.25 #dalam meter, baca datasheet np.sqrt(cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (cover_area_up[1]-((cover_area_up[1]-cover_area_up[0])/2))**2)
-        v_res_div = 55
+        dep_max = 70#/1.25 #dalam meter, baca datasheet np.sqrt(lid_cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (lid_cover_area_bt[1]-((lid_cover_area_bt[1]-lid_cover_area_bt[0])/2))**2)
+        v_res_div = 60
+    elif lidar_sensor == "rs32":
+        v_fov = [-16, 15]
+        dep_max = 150
+        v_res_div = 31
+    else: #"mid360" #rs32
+        v_fov = [-15.5, 10.5] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]
+        dep_max = 200#/1.25 #dalam meter, baca datasheet np.sqrt(lid_cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (lid_cover_area_bt[1]-((lid_cover_area_bt[1]-lid_cover_area_bt[0])/2))**2)
+        v_res_div = 50
     max_intensity = 100.0
     # v_fov_down = -1*np.radians(2)
     # v_fov_up = np.radians(24.9)

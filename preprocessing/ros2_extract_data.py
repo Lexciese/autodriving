@@ -8,6 +8,7 @@ from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
 from pypcd import pypcd
 from cv_bridge import CvBridge
+from sensor_msgs_py.point_cloud2 import read_points
 from config import GlobalConfig
 
 try:
@@ -123,9 +124,13 @@ def save(sync_data):
     np.save(dirs['depth_map'] + fname + ".npy", depth)
 
     lidar_msg = sync_data['/rslidar_points']
-    lidar_pc = pypcd.PointCloud.from_msg(lidar_msg)
-    mask = ~(np.isnan(lidar_pc.pc_data['x']) | np.isnan(lidar_pc.pc_data['y']) | np.isnan(lidar_pc.pc_data['z']))
-    lidar_pc.pc_data = lidar_pc.pc_data[mask]
+    points_gen = read_points(lid_msg, skip_nans=True, field_names=("x", "y", "z"))
+    lidar_pc = pypcd.PointCloud.from_array(points)
+    
+    # lidar_pc = pypcd.PointCloud.from_msg(lidar_msg)
+    # mask = ~(np.isnan(lidar_pc.pc_data['x']) | np.isnan(lidar_pc.pc_data['y']) | np.isnan(lidar_pc.pc_data['z']))
+    # lidar_pc.pc_data = lidar_pc.pc_data[mask]
+
     lidar_pc.save_pcd(dirs['lidar'] + fname + ".pcd", compression='binary_compressed')
 
 def main():

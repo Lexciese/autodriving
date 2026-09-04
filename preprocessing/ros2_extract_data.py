@@ -6,12 +6,16 @@ import cv2
 from datetime import date
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
-from sensor_msgs_py.point_cloud2 import read_points_numpy
-import pypcd4
-
+from pypcd import pypcd
+from cv_bridge import CvBridge
 from config import GlobalConfig
-configx = GlobalConfig()
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
+
+configx = GlobalConfig()
 BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosbag2_2025_11_05-11_00_19_0.mcap")
 DATADIR = configx.datadir
 PREFIX = str(date.today()) + "_route00"
@@ -37,6 +41,8 @@ dirs = {
 }
 for d in dirs.values():
     Path(d).mkdir(parents=True, exist_ok=True)
+
+bridge = CvBridge()
 
 def closest_in_dq(dq, target, slop):
     best, best_diff = None, slop + 1
@@ -83,32 +89,35 @@ def save(gnss_t, gnss_msg, sync_data):
         yaml.dump(meta, f)
 
     rgb = sync_data['/zed/zed_node/rgb/image_rect_color'][1]
-    cv_img = np.frombuffer(rgb.data, dtype=np.uint8).reshape((rgb.height, rgb.width, 3))
+    cv_img = bridge.imgmsg_to_cv2(rgb, desired_encoding='bgr8')
     cv2.imwrite(dirs['rgb'] + fname + ".png", cv_img)
 
-    dep_pc = sync_data['/zed/zed_node/point_cloud/cloud_registered'][1]
-    points = read_points_numpy(dep_pc, field_names=("x", "y", "z"))
-    pc = pypcd4.PointCloud.from_array(points)
-    pc.save_pcd(dirs['depth_cld'] + fname + ".pcd", compression='binary_compressed')
-    np.save(dirs['depth_cld2'] + fname + ".npy", points)
+    dep_pc_msg = sync_data['/zed/zed_node/point_cloud/cloud_registered'][1]
+    dep_pc = pypcd.PointCloud.from_msg(dep_pc_msg)
+    dep_pc.save_pcd(dirs['depth_cld'] + fname + ".pcd", compression='binary_compressed')
+    points3 = dep_pc.pc_data[['x', 'y', 'z']]
+    np.save(dirs['depth_cld2'] + fname + ".npy", points3)
 
     dep_img = sync_data['/zed/zed_node/depth/depth_registered'][1]
-    depth = np.frombuffer(dep_img.data, dtype=np.float32).reshape((dep_img.height, dep_img.width))
+    depth = bridge.imgmsg_to_cv2(dep_img, desired_encoding='passthrough')
     np.save(dirs['depth_map'] + fname + ".npy", depth)
 
-    lidar = sync_data['/rslidar_points'][1]
-    lidar_pts = read_points_numpy(lidar, field_names=("x", "y", "z"))
-    lidar_pc = pypcd4.PointCloud.from_array(lidar_pts)
+    lidar_msg = sync_data['/rslidar_points'][1]
+    lidar_pc = pypcd.PointCloud.from_msg(lidar_msg)
     lidar_pc.save_pcd(dirs['lidar'] + fname + ".pcd", compression='binary_compressed')
 
 def main():
     typestore = get_typestore(Stores.ROS2_HUMBLE)
     with AnyReader([BAG], default_typestore=typestore) as reader:
-        conns = [reader.connections[t] for t in TOPICS]
+        conns = [c for c in reader.connections if c.topic in TOPICS]
         deques = {t: deque() for t in TOPICS if t != '/gnss/fix'}
         pending_gnss = deque()
 
-        for conn, ts, raw in reader.messages(connections=conns):
+        msg_iter = reader.messages(connections=conns)
+        if tqdm is not None:
+            msg_iter = tqdm(msg_iter, desc="Processing", unit="msg")
+
+        for conn, ts, raw in msg_iter:
             msg = reader.deserialize(raw, conn.msgtype)
             if not hasattr(msg, 'header'):
                 continue

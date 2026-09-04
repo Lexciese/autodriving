@@ -104,8 +104,7 @@ def save(gnss_t, gnss_msg, sync_data):
 def main():
     typestore = get_typestore(Stores.ROS2_HUMBLE)
     with AnyReader([BAG], default_typestore=typestore) as reader:
-        conns = [reader.connection(t) for t in TOPICS]
-        gnss_conn = reader.connection('/gnss/fix')
+        conns = [reader.connections[t] for t in TOPICS]
         deques = {t: deque() for t in TOPICS if t != '/gnss/fix'}
         pending_gnss = deque()
 

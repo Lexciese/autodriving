@@ -38,10 +38,40 @@ class KarrDataset(Dataset):
         self.imu_heading = []
         self.velocity = []
 
-        self.root_path = ["/media/mf/AUTODRIVING-4TB/UGM Baru/datasetx/2026-04-15_route00", "/media/mf/AUTODRIVING-4TB/ringroad/datasetx/2026-02-26_route00"]
+        self.root_path = ["/media/mf/AUTODRIVING-4TB1/UGM Baru/autoriving-oskarnatan/datasetx/2026-04-15_route00"]
 
         for path in self.root_path:
+            path = Path(path)
+            self.dir_meta      = path / "meta"             # .yml
+            self.dir_rgb       = path / "camera" / "rgb"   # .png
+            self.dir_raw_pcd   = path / "lidar" / "cld"    # .pcd
+            self.dir_seg_pcd   = path / "lidar" / "seg"    # .npy
+
+            self.files = os.listdir(self.dir_meta)
+            self.files.sort()
+            self.files = [os.path.splitext(filename)[0] for filename in self.files] # remove extension string
+            self.len_files = len(self.files)
+
+            with open(path / "routepoint_list.yml", "r") as rp_listx:
+                rp_list = yaml.safe_load(rp_listx)
+                #assign end point sebagai route terakhir
+                rp_list['route_point']['latitude'].append(rp_list['last_point']['latitude'])
+                rp_list['route_point']['longitude'].append(rp_list['last_point']['longitude'])
             
+            # Past: [current_idx - seq_len + 1, current_idx]
+            # Current: self.files[current_idx]
+            # Future: current_idx + data_rate, current_idx + 2*data_rate,
+            for current_idx in range((self.seq_len - 1), (self.len_files - self.pred_len * self.data_rate)):
+                # past frames
+                for past_idx in range(current_idx - (self.seq_len - 1), current_idx + 1):
+                    pass
+
+                # current frames
+                temp = self.files[current_idx]
+
+                # future frames
+                for future_idx in range((current_idx + self.data_rate), (current_idx + (self.pred_len + 1) * self.data_rate), step=self.data_rate):
+                    pass
 
 
         

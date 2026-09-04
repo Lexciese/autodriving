@@ -35,4 +35,4 @@ fig.update_layout(
 )
 fig.update_yaxes(scaleanchor="x", scaleratio=1)
 
-fig.write_html('meta_points.html')
+fig.write_html('check_latlon.html')

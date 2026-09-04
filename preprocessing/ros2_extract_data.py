@@ -19,7 +19,7 @@ configx = GlobalConfig()
 BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosbag2_2025_11_05-11_00_19_0.mcap")
 DATADIR = configx.datadir
 PREFIX = str(date.today()) + "_route00"
-SLOP_NS = 150_000_000
+SLOP_NS = 150_000_000  # 0.15 s
 TOPICS = [
     '/gnss/fix',
     '/gnss/fix_velocity',
@@ -44,65 +44,85 @@ for d in dirs.values():
 
 bridge = CvBridge()
 
-def closest_in_dq(dq, target, slop):
-    best, best_diff = None, slop + 1
-    for t, msg in dq:
-        diff = abs(t - target)
-        if diff < best_diff:
-            best_diff = diff
-            best = (t, msg)
-    return best if best_diff <= slop else None
+class ApproximateTimeSynchronizer:
+    def __init__(self, topics, slop_ns, callback):
+        self.topics = topics
+        self.slop_ns = slop_ns
+        self.callback = callback
+        self.queues = {t: deque() for t in topics}
 
-def trim_dq(dq, limit):
-    while dq and dq[0][0] < limit:
-        dq.popleft()
+    def add(self, topic, msg):
+        if topic not in self.queues:
+            return
+        self.queues[topic].append(msg)
+        self._process()
 
-def save(gnss_t, gnss_msg, sync_data):
-    sec = str(gnss_msg.header.stamp.sec).zfill(10)
-    nsec = str(gnss_msg.header.stamp.nanosec).zfill(10)
+    def _process(self):
+        while all(self.queues[t] for t in self.topics):
+            t0 = {t: self._get_timestamp(self.queues[t][0]) for t in self.topics}
+            min_t = min(t0.values())
+            max_t = max(t0.values())
+            if max_t - min_t <= self.slop_ns:
+                sync_msgs = {t: self.queues[t].popleft() for t in self.topics}
+                self.callback(sync_msgs)
+            else:
+                min_topic = min(t0, key=t0.get)
+                self.queues[min_topic].popleft()
+
+    def _get_timestamp(self, msg):
+        return msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+
+    def flush(self):
+        self._process()
+
+def save(sync_data):
+    first_topic = next(iter(sync_data))
+    ts = sync_data[first_topic].header.stamp
+    sec = str(ts.sec).zfill(10)
+    nsec = str(ts.nanosec).zfill(10)
     fname = sec + "_" + nsec
 
     meta = {
         'sec': sec,
         'nanosec': nsec,
-        'global_position_latlon': [gnss_msg.latitude, gnss_msg.longitude],
-        'velocity': sync_data['/gnss/fix_velocity'][1].twist.linear.x,
-        'local_position_xyz': [sync_data['/zed/zed_node/odom'][1].pose.pose.position.x,
-                               sync_data['/zed/zed_node/odom'][1].pose.pose.position.y,
-                               sync_data['/zed/zed_node/odom'][1].pose.pose.position.z],
-        'local_orientation_xyzw': [sync_data['/zed/zed_node/odom'][1].pose.pose.orientation.x,
-                                   sync_data['/zed/zed_node/odom'][1].pose.pose.orientation.y,
-                                   sync_data['/zed/zed_node/odom'][1].pose.pose.orientation.z,
-                                   sync_data['/zed/zed_node/odom'][1].pose.pose.orientation.w],
-        'global_orientation_xyzw': [sync_data['/imu'][1].orientation.x,
-                                    sync_data['/imu'][1].orientation.y,
-                                    sync_data['/imu'][1].orientation.z,
-                                    sync_data['/imu'][1].orientation.w],
-        'angular_speed_xyz': [sync_data['/imu'][1].angular_velocity.x,
-                              sync_data['/imu'][1].angular_velocity.y,
-                              sync_data['/imu'][1].angular_velocity.z],
-        'acceleration_xyz': [sync_data['/imu'][1].linear_acceleration.x,
-                             sync_data['/imu'][1].linear_acceleration.y,
-                             sync_data['/imu'][1].linear_acceleration.z]
+        'global_position_latlon': [sync_data['/gnss/fix'].latitude, sync_data['/gnss/fix'].longitude],
+        'velocity': sync_data['/gnss/fix_velocity'].twist.linear.x,
+        'local_position_xyz': [sync_data['/zed/zed_node/odom'].pose.pose.position.x,
+                               sync_data['/zed/zed_node/odom'].pose.pose.position.y,
+                               sync_data['/zed/zed_node/odom'].pose.pose.position.z],
+        'local_orientation_xyzw': [sync_data['/zed/zed_node/odom'].pose.pose.orientation.x,
+                                   sync_data['/zed/zed_node/odom'].pose.pose.orientation.y,
+                                   sync_data['/zed/zed_node/odom'].pose.pose.orientation.z,
+                                   sync_data['/zed/zed_node/odom'].pose.pose.orientation.w],
+        'global_orientation_xyzw': [sync_data['/imu'].orientation.x,
+                                    sync_data['/imu'].orientation.y,
+                                    sync_data['/imu'].orientation.z,
+                                    sync_data['/imu'].orientation.w],
+        'angular_speed_xyz': [sync_data['/imu'].angular_velocity.x,
+                              sync_data['/imu'].angular_velocity.y,
+                              sync_data['/imu'].angular_velocity.z],
+        'acceleration_xyz': [sync_data['/imu'].linear_acceleration.x,
+                             sync_data['/imu'].linear_acceleration.y,
+                             sync_data['/imu'].linear_acceleration.z]
     }
     with open(dirs['meta'] + fname + ".yml", 'w') as f:
         yaml.dump(meta, f)
 
-    rgb = sync_data['/zed/zed_node/rgb/image_rect_color'][1]
-    cv_img = bridge.imgmsg_to_cv2(rgb, desired_encoding='bgr8')
+    rgb_msg = sync_data['/zed/zed_node/rgb/image_rect_color']
+    cv_img = bridge.imgmsg_to_cv2(rgb_msg, desired_encoding='bgr8')
     cv2.imwrite(dirs['rgb'] + fname + ".png", cv_img)
 
-    dep_pc_msg = sync_data['/zed/zed_node/point_cloud/cloud_registered'][1]
+    dep_pc_msg = sync_data['/zed/zed_node/point_cloud/cloud_registered']
     dep_pc = pypcd.PointCloud.from_msg(dep_pc_msg)
     dep_pc.save_pcd(dirs['depth_cld'] + fname + ".pcd", compression='binary_compressed')
     points3 = dep_pc.pc_data[['x', 'y', 'z']]
     np.save(dirs['depth_cld2'] + fname + ".npy", points3)
 
-    dep_img = sync_data['/zed/zed_node/depth/depth_registered'][1]
-    depth = bridge.imgmsg_to_cv2(dep_img, desired_encoding='passthrough')
+    dep_img_msg = sync_data['/zed/zed_node/depth/depth_registered']
+    depth = bridge.imgmsg_to_cv2(dep_img_msg, desired_encoding='passthrough')
     np.save(dirs['depth_map'] + fname + ".npy", depth)
 
-    lidar_msg = sync_data['/rslidar_points'][1]
+    lidar_msg = sync_data['/rslidar_points']
     lidar_pc = pypcd.PointCloud.from_msg(lidar_msg)
     lidar_pc.save_pcd(dirs['lidar'] + fname + ".pcd", compression='binary_compressed')
 
@@ -110,8 +130,7 @@ def main():
     typestore = get_typestore(Stores.ROS2_HUMBLE)
     with AnyReader([BAG], default_typestore=typestore) as reader:
         conns = [c for c in reader.connections if c.topic in TOPICS]
-        deques = {t: deque() for t in TOPICS if t != '/gnss/fix'}
-        pending_gnss = deque()
+        synchronizer = ApproximateTimeSynchronizer(TOPICS, SLOP_NS, save)
 
         msg_iter = reader.messages(connections=conns)
         if tqdm is not None:
@@ -121,40 +140,9 @@ def main():
             msg = reader.deserialize(raw, conn.msgtype)
             if not hasattr(msg, 'header'):
                 continue
-            t_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
-            topic = conn.topic
+            synchronizer.add(conn.topic, msg)
 
-            if topic == '/gnss/fix':
-                pending_gnss.append((t_ns, msg))
-            else:
-                deques[topic].append((t_ns, msg))
-                trim_dq(deques[topic], t_ns - SLOP_NS)
-
-            while pending_gnss and pending_gnss[0][0] + SLOP_NS <= t_ns:
-                gnss_t, gnss_msg = pending_gnss.popleft()
-                sync_data = {}
-                ok = True
-                for t in deques:
-                    closest = closest_in_dq(deques[t], gnss_t, SLOP_NS)
-                    if closest is None:
-                        ok = False
-                        break
-                    sync_data[t] = closest
-                if ok:
-                    save(gnss_t, gnss_msg, sync_data)
-
-        while pending_gnss:
-            gnss_t, gnss_msg = pending_gnss.popleft()
-            sync_data = {}
-            ok = True
-            for t in deques:
-                closest = closest_in_dq(deques[t], gnss_t, SLOP_NS)
-                if closest is None:
-                    ok = False
-                    break
-                sync_data[t] = closest
-            if ok:
-                save(gnss_t, gnss_msg, sync_data)
+        synchronizer.flush()
 
 if __name__ == "__main__":
     main()

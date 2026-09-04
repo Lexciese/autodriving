@@ -9,8 +9,11 @@ from rosbags.typesys import Stores, get_typestore
 from sensor_msgs_py.point_cloud2 import read_points_numpy
 import pypcd4
 
+from config import GlobalConfig
+configx = GlobalConfig()
+
 BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosbag2_2025_11_05-11_00_19_0.mcap")
-DATADIR = "datasetx/"
+DATADIR = configx.datadir
 PREFIX = str(date.today()) + "_route00"
 SLOP_NS = 150_000_000
 TOPICS = [

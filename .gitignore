@@ -1,1 +1,3 @@
 datasetx/
+**/__pycache__/
+*.pyc

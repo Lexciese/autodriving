@@ -3,7 +3,8 @@ import numpy as np
 from datetime import date
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
-from pypcd import pypcd
+# from pypcd import pypcd
+from pypcd4 import PointCloud, Encoding
 from config import GlobalConfig
 
 try:
@@ -27,7 +28,7 @@ def save_lidar(msg):
     sec = str(ts.sec).zfill(10)
     nsec = str(ts.nanosec).zfill(10)
     fname = f"{sec}_{nsec}"
-    lidar_pc = pypcd.PointCloud.from_msg(msg)
+    lidar_pc = PointCloud.from_msg(msg)
     print(f"datatype lidar msg: {type(msg)}")
     print(f"datatype lidar_pc: {type(lidar_pc)}")
 
@@ -39,8 +40,8 @@ def save_lidar(msg):
     )
     lidar_pc.pc_data = lidar_pc.pc_data[mask]
 
-    out_path = lidar_dir / f"{fname}.pcd"
-    lidar_pc.save_pcd(str(out_path), compression='binary_compressed')
+    out_path = lidar_dir / f"{fname}.pcd" 
+    lidar_pc.save(str(out_path), encoding=Encoding.BINARY_COMPRESSED)
 
 def main():
     typestore = get_typestore(Stores.ROS2_HUMBLE)
@@ -59,6 +60,7 @@ def main():
 
         for conn, ts, raw in msg_iter:
             msg = reader.deserialize(raw, conn.msgtype)
+            print(type(msg))
             save_lidar(msg)
 
 if __name__ == "__main__":

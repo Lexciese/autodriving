@@ -6,7 +6,8 @@ import cv2
 from datetime import date
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
-from pypcd import pypcd # pip install --upgrade git+https://github.com/klintan/pypcd.git 
+# from pypcd import pypcd # pip install --upgrade git+https://github.com/klintan/pypcd.git 
+from pypcd4 import PointCloud, Encoding
 from cv_bridge import CvBridge
 from config import GlobalConfig
 
@@ -113,8 +114,8 @@ def save(sync_data):
     cv2.imwrite(dirs['rgb'] + fname + ".png", cv_img)
 
     dep_pc_msg = sync_data['/zed/zed_node/point_cloud/cloud_registered']
-    dep_pc = pypcd.PointCloud.from_msg(dep_pc_msg)
-    dep_pc.save_pcd(dirs['depth_cld'] + fname + ".pcd", compression='binary_compressed')
+    dep_pc = PointCloud.from_msg(dep_pc_msg)
+    dep_pc.save(dirs['depth_cld'] + fname + ".pcd", encoding=Encoding.BINARY_COMPRESSED)
     points3 = dep_pc.pc_data[['x', 'y', 'z']]
     np.save(dirs['depth_cld2'] + fname + ".npy", points3)
 
@@ -123,10 +124,10 @@ def save(sync_data):
     np.save(dirs['depth_map'] + fname + ".npy", depth)
 
     lidar_msg = sync_data['/rslidar_points']
-    lidar_pc = pypcd.PointCloud.from_msg(lidar_msg)
+    lidar_pc = PointCloud.from_msg(lidar_msg)
     mask = ~(np.isnan(lidar_pc.pc_data['x']) | np.isnan(lidar_pc.pc_data['y']) | np.isnan(lidar_pc.pc_data['z']))
     lidar_pc.pc_data = lidar_pc.pc_data[mask]
-    lidar_pc.save_pcd(dirs['lidar'] + fname + ".pcd", compression='binary_compressed')
+    lidar_pc.save(dirs['lidar'] + fname + ".pcd", encoding=Encoding.BINARY_COMPRESSED)
 
 def main():
     typestore = get_typestore(Stores.ROS2_HUMBLE)

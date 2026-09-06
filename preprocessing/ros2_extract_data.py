@@ -6,7 +6,7 @@ import cv2
 from datetime import date
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
-from pypcd import pypcd
+from pypcd import pypcd # pip install --upgrade git+https://github.com/klintan/pypcd.git 
 from cv_bridge import CvBridge
 from config import GlobalConfig
 

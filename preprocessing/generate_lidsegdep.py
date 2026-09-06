@@ -63,7 +63,10 @@ for route in route_list:
             lid_x = lid_pc.pc_data['x']
             lid_y = lid_pc.pc_data['y']
             lid_z = lid_pc.pc_data['z']
-            lid_intensity = lid_pc.pc_data['intensity']
+            if 'intensity' in lid_pc.pc_data.dtype.names:
+                lid_intensity = lid_pc.pc_data['intensity']
+            else:
+                lid_intensity = np.ones(lid_x.shape[0], dtype=np.float32)
             in_velodyne = np.zeros(lid_x.shape[0] + lid_y.shape[0] + lid_z.shape[0] + lid_intensity.shape[0], dtype=np.float32)
             in_velodyne[0::4] = lid_x
             in_velodyne[1::4] = lid_y

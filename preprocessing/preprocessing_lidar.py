@@ -103,7 +103,7 @@ class PreprocessingLidar(Preprocessing):
             self.rear_segcol = colorize_seg(self.rear_seg.cpu().detach().numpy(), self.config.SEG_CLASSES['colors'])  
             self.rear_depcol = colorize_logdepth(self.rear_dep.cpu().detach().numpy())
 
-    def get_output(self, to_file=True):
+    def get_output(self, as_image=True, to_file=True):
         # Save generated images if paths are provided
         if to_file and hasattr(self, 'paths'):
             np.save(str(self.paths['seg']), self.predict_labels)
@@ -113,8 +113,10 @@ class PreprocessingLidar(Preprocessing):
             cv2.imwrite(str(self.paths['front_dep']), self.front_depcol)
             cv2.imwrite(str(self.paths['rear_seg']), self.rear_segcol)
             cv2.imwrite(str(self.paths['rear_dep']), self.rear_depcol)
-        else:
+        elif as_image == False and to_file == False:
             return self.bev_seg, self.bev_dep, self.self.front_seg, self.front_dep, self.rear_seg, self.rear_dep
+        elif as_image == True and to_file == False:
+            return self.bev_segcol, self.bev_depcol, self.front_segcol, self.front_depcol, self.rear_segcol, self.rear_depcol
     
     def _cart2polar(self, input, gpu=False):
         if gpu == False:
@@ -329,7 +331,7 @@ def main():
             }
             preproc_lidar.set_input(f"{dir_lidar}/{file}.pcd")
             preproc_lidar.process()
-            preproc_lidar.get_output(to_file=True)
+            preproc_lidar.get_output(as_image=True, to_file=True)
 
 
 if __name__ == "__main__":

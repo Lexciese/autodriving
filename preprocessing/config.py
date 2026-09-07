@@ -19,10 +19,9 @@ class GlobalConfig:
 
     # route_gap_time = 10 #dalam second, sesuaikan dengan kcepatan (v=~1.25m/s, maka gap dalam meter = v x t = 1.25 x 10 = ~12.5 meter)
     route_gap_distance = 6 #dalam meter
-    hz = 4 #1 detik ada berapa sample yang direcord, cek dan hitung manual di meta yml
-    n_buffer = 5 #dalam sekon buat MAF
-    num_wp = 5 #waypoints
-    num_rp = 2
+    hz = 1 #1 detik ada berapa sample yang direcord, cek dan hitung manual di meta yml
+    n_buffer = 0 #dalam sekon buat MAF
+    n_wp = 5 #waypoints
     wp_gap = int(hz*5) #berapa frame?
     gap_bearing = wp_gap #buat estimasi bearing berapa frame?
     # bias_basic = 0

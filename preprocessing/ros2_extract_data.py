@@ -125,8 +125,10 @@ def save(sync_data):
 
     lidar_msg = sync_data['/rslidar_points']
     lidar_pc = PointCloud.from_msg(lidar_msg)
-    mask = ~(np.isnan(lidar_pc.pc_data['x']) | np.isnan(lidar_pc.pc_data['y']) | np.isnan(lidar_pc.pc_data['z']))
-    lidar_pc.pc_data = lidar_pc.pc_data[mask]
+    lidar_pc = lidar_pc.numpy(["x", "y", "z", "intensity"])
+    xyz_mask = ~np.isnan(lidar_pc[:, :3]).any(axis=1)
+    lidar_pc = lidar_pc[xyz_mask]
+    lidar_pc = PointCloud.from_xyzi_points(lidar_pc)
     lidar_pc.save(dirs['lidar'] + fname + ".pcd", encoding=Encoding.BINARY_COMPRESSED)
 
 def main():

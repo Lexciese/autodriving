@@ -14,10 +14,10 @@ except ImportError:
 
 # Initialize Configuration
 configx = GlobalConfig()
-BAG = Path("/home/lexciese/Dev/autodriving/ai23/lidar_new_college/lidar_new_college.mcap")
+BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosbag2_2025_11_05-11_00_19_0.mcap")
 DATADIR = configx.datadir
 PREFIX = str(date.today()) + "_route00"
-TOPIC = '/velodyne_points'
+TOPIC = '/rslidar_points'
 
 # Set up output directory
 lidar_dir = Path(DATADIR) / PREFIX / "lidar" / "cld"
@@ -29,17 +29,10 @@ def save_lidar(msg):
     nsec = str(ts.nanosec).zfill(10)
     fname = f"{sec}_{nsec}"
     lidar_pc = PointCloud.from_msg(msg)
-    print(f"datatype lidar msg: {type(msg)}")
-    print(f"datatype lidar_pc: {type(lidar_pc)}")
-
-    # Filter out invalid NaN points (x, y, z)
-    mask = ~(
-        np.isnan(lidar_pc.pc_data['x']) | 
-        np.isnan(lidar_pc.pc_data['y']) | 
-        np.isnan(lidar_pc.pc_data['z'])
-    )
-    lidar_pc.pc_data = lidar_pc.pc_data[mask]
-
+    lidar_pc = lidar_pc.numpy(["x", "y", "z", "intensity"])
+    xyz_mask = ~np.isnan(lidar_pc[:, :3]).any(axis=1)
+    lidar_pc = lidar_pc[xyz_mask]
+    lidar_pc = PointCloud.from_xyzi_points(lidar_pc)
     out_path = lidar_dir / f"{fname}.pcd" 
     lidar_pc.save(str(out_path), encoding=Encoding.BINARY_COMPRESSED)
 

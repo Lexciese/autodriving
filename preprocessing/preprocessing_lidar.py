@@ -56,7 +56,9 @@ class PreprocessingLidar(Preprocessing):
                 pcd_i = self.pcd.pc_data['intensity']
             else:
                 pcd_i = np.ones(pcd_x.shape[0], dtype=np.float32)
-            in_pcd = np.column_stack((pcd_x, pcd_y, pcd_z, pcd_i)).astype('float32') 
+            in_pcd = np.column_stack((pcd_x, pcd_y, pcd_z, pcd_i)).astype('float32')
+            valid_mask = np.isfinite(in_pcd).all(axis=1)
+            in_pcd = in_pcd[valid_mask]
             if self.config.use_gpu:
                 in_pcd = torch.from_numpy(in_pcd).to(self.config.gpu_device, dtype=self.config.dtype)
             

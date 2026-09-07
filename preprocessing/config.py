@@ -4,7 +4,7 @@ import os
 from PIL import ImageFont
 
 class GlobalConfig:
-    datadir = "../temp_datasetx/"
+    datadir = "../datasetx/"
     cam_h = 128
     cam_w = 256
     lidbev_h = 256
@@ -15,6 +15,7 @@ class GlobalConfig:
     dvs_w = cam_w
     # w = 256
     bs = 1 #batch size
+    use_gpu = True
 
     # route_gap_time = 10 #dalam second, sesuaikan dengan kcepatan (v=~1.25m/s, maka gap dalam meter = v x t = 1.25 x 10 = ~12.5 meter)
     route_gap_distance = 6 #dalam meter
@@ -87,16 +88,10 @@ class GlobalConfig:
 
     #config polarseg
     ignore_label = 0
-    grid_size = np.asarray([480,360,32])
-    max_volume_space = np.asarray([50,np.pi,1.5])
-    min_volume_space = np.asarray([3,-np.pi,-3])
-    intervals = (max_volume_space - min_volume_space) / (grid_size-1)
-    #untuk operasi langsung tensor
-    grid_size_ten = torch.from_numpy(np.asarray([480,360,32])).to(gpu_device, dtype=dtype)
-    max_volume_space_ten = torch.from_numpy(np.asarray([50,np.pi,1.5])).to(gpu_device, dtype=dtype)
-    min_volume_space_ten = torch.from_numpy(np.asarray([3,-np.pi,-3])).to(gpu_device, dtype=dtype)
-    intervals_ten = (max_volume_space_ten - min_volume_space_ten) / (grid_size_ten-1)
-    
+    grid_size = [480, 360, 32]
+    max_volume_space = [50,np.pi,1.5]
+    min_volume_space = [3,-np.pi,-3]
+
     #untuk front_dep dan bev_dep
     #100 untuk HDL32E, 200 untuk VLP32C
     # dep_max = 200#/1.25 #dalam meter, baca datasheet np.sqrt(lid_cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (lid_cover_area_bt[1]-((lid_cover_area_bt[1]-lid_cover_area_bt[0])/2))**2)

@@ -64,7 +64,7 @@ class GlobalConfig:
     elif lidar_sensor == "rs32":
         v_fov = [-16, 15]
         dep_max = 150
-        v_res_div = 60
+        v_res_div = 60 # 50 # 60
     else: #"mid360" #rs32
         v_fov = [-15.5, 10.5] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]
         dep_max = 200#/1.25 #dalam meter, baca datasheet np.sqrt(lid_cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (lid_cover_area_bt[1]-((lid_cover_area_bt[1]-lid_cover_area_bt[0])/2))**2)

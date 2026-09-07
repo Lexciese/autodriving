@@ -4,7 +4,7 @@ import os
 from PIL import ImageFont
 
 class GlobalConfig:
-    datadir = "../datasetx/"
+    datadir = "datasetx/"
     cam_h = 128
     cam_w = 256
     lidbev_h = 256

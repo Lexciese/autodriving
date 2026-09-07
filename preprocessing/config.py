@@ -39,8 +39,8 @@ class GlobalConfig:
     lid_cover_area_lr = 24 #kiri - kanan
     lid_cover_area_bt = [-2, 7] #bawah -> atas
     lid_cover_area_rf = [-24, 24] #posisi belakang lidar -> depan lidar
-    cam_cover_area_lr = [-24, 24]  # left - right coverage area
-    cam_cover_area_rf = [2, 40]  # rear - front coverage area
+    cam_cover_area_lr = 8 #kiri - kanan
+    cam_cover_area_rf = [0, 16] #posisi camera -> area interest max
     SEG_CLASSES = { #lihat di file semantic-kitti.yaml
         'colors'        :[[0, 0, 0], [245, 150, 100], [245, 230, 100], [150, 60, 30], [180, 30, 80],
                         [255, 0, 0], [30, 30, 255], [200, 40, 255], [90, 30, 150],

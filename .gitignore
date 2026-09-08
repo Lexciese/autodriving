@@ -8,6 +8,11 @@ __pycache__/
 *.pyc
 *.so
 .venv/
+*.egg-info/
+*.egg
+*.eggs/
+build/
+dist/
 
 models/*.pt
 models/*.ckpt

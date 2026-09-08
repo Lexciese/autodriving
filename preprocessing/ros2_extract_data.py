@@ -9,7 +9,7 @@ from rosbags.typesys import Stores, get_typestore
 # from pypcd import pypcd # pip install --upgrade git+https://github.com/klintan/pypcd.git 
 from pypcd4 import PointCloud, Encoding
 from cv_bridge import CvBridge
-from config import GlobalConfig
+from preprocessing.config import GlobalConfig
 
 try:
     from tqdm import tqdm

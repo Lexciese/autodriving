@@ -1,10 +1,14 @@
 import numpy as np
 import torch
 import os
+from pathlib import Path
 from PIL import ImageFont
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_PREPROCESSING_DIR = Path(__file__).resolve().parent
+
 class GlobalConfig:
-    datadir = "../datasetx/"
+    datadir = str(_REPO_ROOT / "datasetx") + "/"
     cam_h = 128
     cam_w = 256
     lidbev_h = 256
@@ -30,7 +34,7 @@ class GlobalConfig:
     rp1_close = 1 #jarak minimum untuk ganti rp1 (dalam meter)
 
     #settingan polarseg
-    polarseg_weight_path = os.path.join(os.getcwd(), "polarseg/SemKITTI_PolarSeg.pt")
+    polarseg_weight_path = str(_PREPROCESSING_DIR / "polarseg" / "SemKITTI_PolarSeg.pt")
     gpu_id = "0"
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" 
     os.environ["CUDA_VISIBLE_DEVICES"]=gpu_id#visible_gpu #"0" "1" "0,1"
@@ -99,8 +103,8 @@ class GlobalConfig:
 
 
     #settingan segformer
-    segformer_weight_path = os.path.join(os.getcwd(), "segformer/segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth")
-    segformer_config_path = os.path.join(os.getcwd(), "segformer/configs/segformer/segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py")
+    segformer_weight_path = str(_PREPROCESSING_DIR / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth")
+    segformer_config_path = str(_PREPROCESSING_DIR / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py")
     #BACA https://mmsegmentation.readthedocs.io/en/latest/_modules/mmseg/core/evaluation/class_names.html#get_palette
     #HANYA ADA 19 CLASS?? #tambahan 0,0,0 hitam untuk area kosong pada SDC nantinya
     cityscapes_palette = [[0, 0, 0], [128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],  

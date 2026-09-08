@@ -6,11 +6,11 @@ import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import config as cfg_module
+from ai23 import config as cfg_module
 from model_ikaz import ai23
-import dataloader as dataloader_module
+from ai23 import dataloader as dataloader_module
 from train import prepare_batch
-from utility import crop_matrix
+from ai23.utility.utility import crop_matrix
 
 # --------------------------------------------------------------
 # Constants

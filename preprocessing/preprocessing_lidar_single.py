@@ -9,14 +9,14 @@ torch.backends.cudnn.benchmark = True
 
 from pypcd4 import PointCloud
 from pypcd4.pointcloud2 import sensor_msgs__msg__PointCloud2
-from polarseg.network.BEV_Unet import BEV_Unet
-from polarseg.network.ptBEV import ptBEVnet
-from data_util import preproc_spherical, gen_bev_front_rear_seg_dep, colorize_seg, colorize_logdepth
+from preprocessing.polarseg.network.BEV_Unet import BEV_Unet
+from preprocessing.polarseg.network.ptBEV import ptBEVnet
+from preprocessing.data_util import preproc_spherical, gen_bev_front_rear_seg_dep, colorize_seg, colorize_logdepth
 
-from preprocessing import Preprocessing
-from config import GlobalConfig
+from preprocessing.preprocessing import Preprocessing
+from preprocessing.config import GlobalConfig
 
-from preprocessing_lidar import PreprocessingLidar
+from preprocessing.preprocessing_lidar import PreprocessingLidar
 
 def main():
     config = GlobalConfig()

@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autodriving"
+version = "0.1.0"
+description = "Lidar-only waypoint prediction for autonomous driving (DeepIPCv2 adjustment)."
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["ai23*", "preprocessing*"]

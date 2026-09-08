@@ -16,10 +16,10 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.utils as vutils
 
-from config import GlobalConfig
+from ai23.config import GlobalConfig
 from model_ikaz import ai23
 from data_loader_symlink import KarrDataset
-import utility
+from ai23 import utility
 
 class AverageMeter(object):
     def __init__(self):

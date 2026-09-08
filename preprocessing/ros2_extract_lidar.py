@@ -5,7 +5,7 @@ from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
 # from pypcd import pypcd
 from pypcd4 import PointCloud, Encoding
-from config import GlobalConfig
+from preprocessing.config import GlobalConfig
 
 try:
     from tqdm import tqdm

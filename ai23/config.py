@@ -1,7 +1,9 @@
 import numpy as np
 import torch
 import os
+from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class GlobalConfig:
     bev_h = 128
@@ -37,7 +39,7 @@ class GlobalConfig:
     logdir = logdir+"_seq"+str(seq_len) #update direktori name
     # root_dir = '/media/aisl/data/oskar/ros-whill-robot2/main/dataset/dataset'
     # root_dir = '/home/aisl/OSKAR/WHILL/ros-whill-robot2/main/dataset/dataset'
-    root_dir = os.path.dirname(os.getcwd())+'/dataset/dataset'
+    root_dir = str(_REPO_ROOT / 'dataset' / 'dataset')
     train_dir = root_dir+'/train_routes'
     val_dir = root_dir+'/val_routes'
     test_dir = root_dir+'/test_routes'
@@ -78,7 +80,7 @@ class GlobalConfig:
     des_speed_mul = 1.75
 
     #buat preprocessing data
-    polarseg_weight_path = os.path.join(os.getcwd(), "polarseg/SemKITTI_PolarSeg.pt")
+    polarseg_weight_path = str(_REPO_ROOT / "preprocessing" / "polarseg" / "SemKITTI_PolarSeg.pt")
     gpu_device = torch.device("cuda:0")
     dtype = torch.float32
     cover_area_lr = 16 #kiri - kanan

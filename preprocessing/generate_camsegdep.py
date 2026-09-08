@@ -8,8 +8,8 @@ import cv2
 import numpy as np
 from scipy import interpolate
 import os
-from data_util import colorize_seg, cls2one_hot, colorize_depth, colorize_depthlog
-from config import GlobalConfig
+from preprocessing.data_util import colorize_seg, cls2one_hot, colorize_depth, colorize_depthlog
+from preprocessing.config import GlobalConfig
 configx = GlobalConfig()
 
 """"""

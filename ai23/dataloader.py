@@ -8,8 +8,8 @@ from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from utility.utility import latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
-from config import GlobalConfig
+from ai23.utility.utility import latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
+from ai23.config import GlobalConfig
 
 config = GlobalConfig()
 

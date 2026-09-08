@@ -6,10 +6,10 @@ from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import deque
-from config import GlobalConfig
+from preprocessing.config import GlobalConfig
 configx = GlobalConfig()
 
-from data_util import euler_from_quaternion, latlon_to_yaw, quaternion_to_yaw
+from preprocessing.data_util import euler_from_quaternion, latlon_to_yaw, quaternion_to_yaw
 
 #persoalan QT plugins baca: https://github.com/NVlabs/instant-ngp/discussions/300
 

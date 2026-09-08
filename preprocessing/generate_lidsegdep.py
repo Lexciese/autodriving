@@ -8,10 +8,10 @@ torch.backends.cudnn.benchmark = True
 
 #polarseg
 from pypcd import pypcd #https://github.com/dimatura/pypcd/issues/7 #pip3 install --upgrade git+https://github.com/klintan/pypcd.git 
-from polarseg.network.BEV_Unet import BEV_Unet
-from polarseg.network.ptBEV import ptBEVnet
-from data_util import preproc_spherical, gen_bev_front_rear_seg_dep, colorize_seg, colorize_logdepth
-from config import GlobalConfig
+from preprocessing.polarseg.network.BEV_Unet import BEV_Unet
+from preprocessing.polarseg.network.ptBEV import ptBEVnet
+from preprocessing.data_util import preproc_spherical, gen_bev_front_rear_seg_dep, colorize_seg, colorize_logdepth
+from preprocessing.config import GlobalConfig
 configx = GlobalConfig()
 # print(configx.polarseg_weight_path)
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" 

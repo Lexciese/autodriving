@@ -9,13 +9,13 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 import shutil
 from model import xr20
-from data import WHILL_Data
+from dataloader import KarrDataset
 from config import GlobalConfig
-from torch.utils.tensorboard import SummaryWriter
 
 
 # Class untuk penyimpanan dan perhitungan update loss
@@ -81,7 +81,7 @@ def train(data_loader, model, config, writer, cur_epoch, optimizer, params_lw, o
         rp2 = torch.stack(data['rp2'], dim=1).to(config.gpu_device, dtype=config.dtype)
 
         # Velocity as a scalar per sample in the batch
-        gt_velocity = data['lr_velo'].to(config.gpu_device, dtype=config.dtype)
+        gt_velocity = data['velocity'].to(config.gpu_device, dtype=config.dtype)
         if gt_velocity.dim() == 1:
             gt_velocity = gt_velocity.unsqueeze(1)
 
@@ -187,7 +187,7 @@ def validate(data_loader, model, config, writer, cur_epoch):
             rp1 = torch.stack(data['rp1'], dim=1).to(config.gpu_device, dtype=config.dtype)
             rp2 = torch.stack(data['rp2'], dim=1).to(config.gpu_device, dtype=config.dtype)
 
-            gt_velocity = data['lr_velo'].to(config.gpu_device, dtype=config.dtype)
+            gt_velocity = data['velocity'].to(config.gpu_device, dtype=config.dtype)
             if gt_velocity.dim() == 1:
                 gt_velocity = gt_velocity.unsqueeze(1)
 
@@ -237,8 +237,8 @@ def main():
     optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=4, min_lr=1e-6)
 
-    train_set = WHILL_Data(data_root=config.train_dir, conditions=config.train_conditions, config=config)
-    val_set = WHILL_Data(data_root=config.val_dir, conditions=config.val_conditions, config=config)
+    train_set = KarrDataset(data_root=config.train_dir, conditions=config.train_conditions, config=config)
+    val_set = KarrDataset(data_root=config.val_dir, conditions=config.val_conditions, config=config)
 
     drop_last = True if len(train_set) % config.batch_size == 1 else False
 

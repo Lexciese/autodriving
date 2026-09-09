@@ -99,6 +99,7 @@ class GlobalConfig:
                             'building', 'fence', 'vegetation', 'trunk',
                             'terrain', 'pole', 'traffic-sign']
     }
+    n_class_kitti = len(SEG_CLASSES['colors'])
     n_class = len(SEG_CLASSES['colors'])
 
     #lidar setting, cek HDL-32E dan VLP32C LiDAR sensor datasheet

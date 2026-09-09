@@ -12,10 +12,8 @@ from ai23.utility.utility import latlon_to_yaw, euler_from_quaternion, transform
 from ai23.config import GlobalConfig
 from preprocessing.preprocessing_lidar import PreprocessingLidar
 
-config = GlobalConfig()
-
 class KarrDataset(Dataset):
-    def __init__(self):
+    def __init__(self, config):
         self.preproc_lidar = PreprocessingLidar()
         self.config = config
         self.seq_len = self.config.seq_len

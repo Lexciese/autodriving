@@ -7,7 +7,7 @@ import time
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 torch.backends.cudnn.benchmark = True
@@ -237,13 +237,29 @@ def main():
     optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=4, min_lr=1e-6)
 
-    train_set = KarrDataset(data_root=config.train_dir, conditions=config.train_conditions, config=config)
-    val_set = KarrDataset(data_root=config.val_dir, conditions=config.val_conditions, config=config)
+    karr_dataset = KarrDataset(config=config)
+
+    # Calculate dataset lengths
+    total_len = len(karr_dataset)
+    # train: 80%, validation: 10%, test: 10%
+    train_len = int(0.8 * total_len)
+    val_len = int(0.1 * total_len)
+    test_len = total_len - train_len - val_len
+
+    train_indices = list(range(0, train_len))
+    val_indices = list(range(train_len, train_len + val_len))
+    test_indices = list(range(train_len + val_len, total_len))
+
+    train_set = Subset(karr_dataset, train_indices)
+    val_set = Subset(karr_dataset, val_indices)
+    test_set = Subset(karr_dataset, test_indices)
 
     drop_last = True if len(train_set) % config.batch_size == 1 else False
 
     dataloader_train = DataLoader(train_set, batch_size=config.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=drop_last)
     dataloader_val = DataLoader(val_set, batch_size=config.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+
+    print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {len(test_set)}")
 
     if not os.path.exists(config.logdir + "/trainval_log.csv"):
         print('TRAIN from the beginning!!!!!!!!!!!!!!!!')

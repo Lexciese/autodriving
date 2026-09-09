@@ -14,7 +14,7 @@ from preprocessing.preprocessing_lidar import PreprocessingLidar
 
 class KarrDataset(Dataset):
     def __init__(self, config):
-        self.preproc_lidar = PreprocessingLidar()
+        self.preproc_lidar = PreprocessingLidar(config=config)
         self.config = config
         self.seq_len = self.config.seq_len
         self.pred_len = self.config.pred_len

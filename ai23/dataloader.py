@@ -56,7 +56,7 @@ class KarrDataset(Dataset):
             "velocity": []
         }
 
-        self.root_path = ["/media/mf/AUTODRIVING-4TB1/UGM Baru/autoriving-oskarnatan/datasetx/2026-04-15_route00"]
+        self.root_path = ["/media/mf/SATA4TB/autodriving/datasetx/2026-09-07_route00"]
 
         for path in self.root_path:
             path = Path(path)

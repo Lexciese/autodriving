@@ -7,10 +7,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class GlobalConfig:
     use_gpu = True
-    bev_h = 128
-    bev_w = 256
-    front_h = 64
-    front_w = 512
+    bev_h = lidbev_h = 128
+    bev_w = lidbev_w = 256
+    front_h = lidfront_h = 64
+    front_w = lidfront_w = 512
     # w = 256
     hz = 4 #1 detik ada berapa sample yang direcord
     bias_basic = 15
@@ -23,7 +23,7 @@ class GlobalConfig:
     # perspectives = 'bevfro' #bevfro bev fro
     logdir = 'log/xr20_'+inputs#+'_'+perspectives
     init_stop_counter = 30
-    batch_size = 10
+    batch_size = 4
     lr = 1e-4 # learning rate #pakai AdamW
     weight_decay = 1e-3
     #parameter untuk MGN
@@ -84,9 +84,9 @@ class GlobalConfig:
     polarseg_weight_path = str(_REPO_ROOT / "preprocessing" / "polarseg" / "SemKITTI_PolarSeg.pt")
     gpu_device = torch.device("cuda:0")
     dtype = torch.float32
-    cover_area_lr = 16 #kiri - kanan
-    cover_area_up = [-1.5, 6.5] #bawah -> atas
-    cover_area_f = [1.25, 17.25] #posisi camera -> area interest max
+    cover_area_lr = lid_cover_area_lr = 16 #kiri - kanan
+    cover_area_up = lid_cover_area_bt = [-1.5, 6.5] #bawah -> atas
+    cover_area_f = lid_cover_area_rf = [1.25, 17.25] #posisi camera -> area interest max
     SEG_CLASSES = { #lihat di file semantic-kitti.yaml
         'colors'        :[[0, 0, 0], [245, 150, 100], [245, 230, 100], [150, 60, 30], [180, 30, 80],
                         [255, 0, 0], [30, 30, 255], [200, 40, 255], [90, 30, 150],

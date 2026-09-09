@@ -72,10 +72,10 @@ def train(data_loader, model, config, writer, cur_epoch, optimizer, params_lw, o
         front_segs = []
         front_deps = []
         for i in range(0, config.seq_len):
-            bev_segs.append(torch.tensor(data['bev_segs'][i]).to(config.gpu_device, dtype=config.dtype))
-            bev_deps.append(torch.tensor(data['bev_deps'][i]).to(config.gpu_device, dtype=config.dtype))
-            front_segs.append(torch.tensor(data['front_segs'][i]).to(config.gpu_device, dtype=config.dtype))
-            front_deps.append(torch.tensor(data['front_deps'][i]).to(config.gpu_device, dtype=config.dtype))
+            bev_segs.append(data['bev_segs'][i].to(config.gpu_device, dtype=config.dtype))
+            bev_deps.append(data['bev_deps'][i].to(config.gpu_device, dtype=config.dtype))
+            front_segs.append(data['front_segs'][i].to(config.gpu_device, dtype=config.dtype))
+            front_deps.append(data['front_deps'][i].to(config.gpu_device, dtype=config.dtype))
 
         rp1 = torch.stack(data['rp1'], dim=1).to(config.gpu_device, dtype=config.dtype)
         rp2 = torch.stack(data['rp2'], dim=1).to(config.gpu_device, dtype=config.dtype)
@@ -179,10 +179,10 @@ def validate(data_loader, model, config, writer, cur_epoch):
             front_segs = []
             front_deps = []
             for i in range(0, config.seq_len):
-                bev_segs.append(torch.tensor(data['bev_segs'][i]).to(config.gpu_device, dtype=config.dtype))
-                bev_deps.append(torch.tensor(data['bev_deps'][i]).to(config.gpu_device, dtype=config.dtype))
-                front_segs.append(torch.tensor(data['front_segs'][i]).to(config.gpu_device, dtype=config.dtype))
-                front_deps.append(torch.tensor(data['front_deps'][i]).to(config.gpu_device, dtype=config.dtype))
+                bev_segs.append(data['bev_segs'][i].to(config.gpu_device, dtype=config.dtype))
+                bev_deps.append(data['bev_deps'][i].to(config.gpu_device, dtype=config.dtype))
+                front_segs.append(data['front_segs'][i].to(config.gpu_device, dtype=config.dtype))
+                front_deps.append(data['front_deps'][i].to(config.gpu_device, dtype=config.dtype))
 
             rp1 = torch.stack(data['rp1'], dim=1).to(config.gpu_device, dtype=config.dtype)
             rp2 = torch.stack(data['rp2'], dim=1).to(config.gpu_device, dtype=config.dtype)
@@ -291,7 +291,8 @@ def main():
         os.makedirs(config.logdir, exist_ok=True)
         print('Created new retrain dir:', config.logdir)
 
-    shutil.copyfile('config.py', config.logdir + '/config.py')
+    config_file_path = os.path.join(os.path.dirname(__file__), 'config.py')
+    shutil.copyfile(config_file_path, os.path.join(config.logdir, 'config.py'))
 
     log = OrderedDict([
         ('epoch', []),

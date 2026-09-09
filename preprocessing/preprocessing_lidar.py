@@ -161,6 +161,7 @@ class PreprocessingLidar(Preprocessing):
             return grid_ind.long(), return_fea
 
     def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg, gpu=False, bev_multiplier=4, front_multiplier=7, rear_multiplier=9, config=None, bs=None):
+        cfg = config
         if config == None:
             cfg = self.config
         if bs == None:
@@ -176,7 +177,7 @@ class PreprocessingLidar(Preprocessing):
             d_lidar = np.sqrt(ptx**2 + pty**2 + ptz**2)   # shape: (total_pts,)
 
             # Batch index for each point (correctly sized)
-            ptn = np.repeat(np.arange(cfg.bs), total_pts // cfg.bs)
+            ptn = np.repeat(np.arange(bs), total_pts // bs)
             # BEV projection
             # BEV uses X (forward) and Z (height) axes; coordinate normalization.
             # X: map from [-lid_cover_area_lr, lid_cover_area_lr] to [0, lidbev_w-1]
@@ -285,7 +286,7 @@ class PreprocessingLidar(Preprocessing):
             d_lidar = torch.sqrt(ptx**2 + pty**2 + ptz**2)   # shape: (total_pts,)
 
             # Batch index for each point (correctly sized)
-            ptn = torch.arange(cfg.bs, device=cfg.gpu_device, dtype=cfg.dtype).repeat_interleave(total_pts // cfg.bs)
+            ptn = torch.arange(bs, device=cfg.gpu_device, dtype=cfg.dtype).repeat_interleave(total_pts // bs)
             # BEV projection
             # BEV uses X (forward) and Z (height) axes; coordinate normalization.
             # X: map from [-lid_cover_area_lr, lid_cover_area_lr] to [0, lidbev_w-1]

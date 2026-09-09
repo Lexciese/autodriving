@@ -21,6 +21,7 @@ class KarrDataset(Dataset):
         self.data_rate = self.config.hz
         self.rp1_close = self.config.rp1_close
 
+        self.filename = []
         self.rgb = []
         self.raw_pcd = []
         self.seg_pcd = []
@@ -61,9 +62,9 @@ class KarrDataset(Dataset):
         for path in self.root_path:
             path = Path(path)
             preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}.npy"
-            if os.path.exist(preload_path):
-                preload_data = np.load(preload_path, allow_pickle=True)
-                self._load_preload(preload_data)
+            if os.path.exists(preload_path):
+                self.preload_data = np.load(preload_path, allow_pickle=True)
+                self._load_preload(self.preload_data)
                 return
 
             self.dir_meta      = path / "meta"             # .yml
@@ -103,35 +104,35 @@ class KarrDataset(Dataset):
                 # past frames
                 for past_idx in range(current_idx - (self.seq_len - 1), current_idx + 1):
                     filename = self.files[past_idx]
-                    seq_rgb.append(f"{self.dir_rgb_front}/{filename}.png")
+                    seq_rgb.append(f"{self.dir_rgb}/{filename}.png")
                     seq_raw_pcd.append(f"{self.dir_raw_pcd}/{filename}.pcd")
                     seq_seg_pcd.append(f"{self.dir_seg_pcd}/{filename}.npy")
-                preload_data["filename"].append(filename)
-                preload_data["rgb"].append(seq_rgb)
-                preload_data["raw_pcd"].append(seq_raw_pcd)
-                preload_data["seg_pcd"].append(seq_seg_pcd)
+                self.preload_data["filename"].append(filename)
+                self.preload_data["rgb"].append(seq_rgb)
+                self.preload_data["raw_pcd"].append(seq_raw_pcd)
+                self.preload_data["seg_pcd"].append(seq_seg_pcd)
 
                 # current frames
                 filename = self.files[current_idx]
                 with open(f"{self.dir_meta}/{filename}.yml", "r") as read_meta_current:
-                    meta_current = yaml.safe.load(read_meta_current)
+                    meta_current = yaml.safe_load(read_meta_current)
                 seq_local_x.append(meta_current["local_position_xyz"][0])
                 seq_local_y.append(meta_current["local_position_xyz"][1])
                 local_quaternion = meta_current["local_orientation_xyzw"]
                 seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
                 curr_lat = meta_current["global_position_latlon"][0]
                 curr_lon = meta_current["global_position_latlon"][1]
-                preload_data["lat"].append(curr_lat)
-                preload_data["lon"].append(curr_lon)
+                self.preload_data["lat"].append(curr_lat)
+                self.preload_data["lon"].append(curr_lon)
                 velocity = np.abs(meta_current["velocity"])
-                preload_data["velocity"].append(velocity)
+                self.preload_data["velocity"].append(velocity)
 
                 if velocity > 0.5:
                     bearing_latlon = latlon_to_yaw(
                         curr_lat, curr_lon, prev_lat, prev_lon,
                         offset=0.0
                         )
-                    preload_data["bearing"].append(bearing_latlon)
+                    self.preload_data["bearing"].append(bearing_latlon)
                 else:
                     _, _, bearing_witmotion = euler_from_quaternion(
                         w=meta_current['global_orientation_xyzw'][3],
@@ -142,7 +143,7 @@ class KarrDataset(Dataset):
                         )
                     bearing_witmotion = np.degrees(bearing_witmotion) - 90
                     bearing_witmotion = np.radians(bearing_witmotion)
-                    preload_data["bearing"].append(bearing_witmotion)
+                    self.preload_data["bearing"].append(bearing_witmotion)
 
                 prev_lat, prev_lon = curr_lat, curr_lon
 
@@ -163,14 +164,14 @@ class KarrDataset(Dataset):
                         next_lat_rp = rp_list['route_point']['latitude'][j]
                         next_lon_rp = rp_list['route_point']['longitude'][j]
                     if j == 0:
-                        preload_data["rp1_lat"].append(next_lat_rp)
-                        preload_data["rp1_lon"].append(next_lon_rp)
+                        self.preload_data["rp1_lat"].append(next_lat_rp)
+                        self.preload_data["rp1_lon"].append(next_lon_rp)
                     else:
-                        preload_data["rp2_lon"].append(next_lon_rp)
-                        preload_data["rp2_lat"].append(next_lat_rp)
+                        self.preload_data["rp2_lon"].append(next_lon_rp)
+                        self.preload_data["rp2_lat"].append(next_lat_rp)
 
                 # future frames
-                for future_idx in range((current_idx + self.data_rate), (current_idx + (self.pred_len + 1) * self.data_rate), step=self.data_rate):
+                for future_idx in range((current_idx + self.data_rate), (current_idx + (self.pred_len + 1) * self.data_rate), self.data_rate):
                     filename = self.files[future_idx]
                     with open(f"{self.dir_meta}/{filename}.yml", "r") as read_meta_future:
                         meta_future = yaml.safe_load(read_meta_future)
@@ -178,17 +179,21 @@ class KarrDataset(Dataset):
                     seq_local_y.append(meta_current["local_position_xyz"][1])
                     local_quaternion = meta_current["local_orientation_xyzw"]
                     seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
-                preload_data["local_x"].append(seq_local_x)
-                preload_data["local_y"].append(seq_local_y)
-                preload_data["local_heading"].append(seq_local_heading)
-            np.save(preload_path, preload_data)
-            self._load_preload(preload_data)
+                self.preload_data["local_x"].append(seq_local_x)
+                self.preload_data["local_y"].append(seq_local_y)
+                self.preload_data["local_heading"].append(seq_local_heading)
+            np.save(preload_path, self.preload_data)
+            self._load_preload(self.preload_data)
 
     def __len__(self):
         return len(self.raw_pcd)
 
     def __getitem__(self, index):
         data = dict()
+        data['bev_deps'] = []
+        data['bev_segs'] = []
+        data['front_deps'] = []
+        data['front_segs'] = []
         seq_rgb = []
         seq_raw_pcd = []
         seq_seg_pcd = []
@@ -205,7 +210,11 @@ class KarrDataset(Dataset):
         for i in range(0, self.seq_len):
             raw_pcd = PointCloud.from_path(seq_raw_pcd[i])
             seg_pcd = np.load(seq_seg_pcd[i])
-            bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(ptx, pty, ptz, ptseg, gpu=False, bev_multiplier=9, front_multiplier=9, rear_multiplier=9, bs=1, config=self.config)
+            ptx = np.array(raw_pcd.pc_data['y']) * -1
+            pty = np.array(raw_pcd.pc_data['z'])
+            ptz = np.array(raw_pcd.pc_data['x'])
+            ptseg = np.array(seg_pcd[:,0])
+            bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(ptx, pty, ptz, ptseg, gpu=False, bev_multiplier=9, front_multiplier=9, rear_multiplier=9, config=self.config, bs=1)
             data['bev_segs'].append(bev_seg[0])
             data['bev_deps'].append(bev_dep[0])
             data['front_segs'].append(front_seg[0])
@@ -249,21 +258,23 @@ class KarrDataset(Dataset):
         return data
 
     def _load_preload(self, preload_data):
-        self.filename += preload_data.item()["filename"]
-        self.rgb += preload_data.item()["rgb"]
-        self.raw_pcd += preload_data.item()["raw_pcd"]
-        self.seg_pcd += preload_data.item()["seg_pcd"]
-        self.lat += preload_data.item()["lat"]
-        self.lon += preload_data.item()["lon"]
-        self.local_x += preload_data.item()["local_x"]
-        self.local_y += preload_data.item()["local_y"]
-        self.rp1_lat += preload_data.item()["rp1_lat"]
-        self.rp1_lon += preload_data.item()["rp1_lon"]
-        self.rp2_lat += preload_data.item()["rp2_lat"]
-        self.rp2_lon += preload_data.item()["rp2_lon"]
-        self.bearing += preload_data.item()["bearing"]
-        self.local_heading += preload_data.item()["local_heading"]
-        self.velocity += preload_data.item()["velocity"]
+        if isinstance(preload_data, np.ndarray):
+            preload_data = preload_data.item()
+        self.filename += preload_data["filename"]
+        self.rgb += preload_data["rgb"]
+        self.raw_pcd += preload_data["raw_pcd"]
+        self.seg_pcd += preload_data["seg_pcd"]
+        self.lat += preload_data["lat"]
+        self.lon += preload_data["lon"]
+        self.local_x += preload_data["local_x"]
+        self.local_y += preload_data["local_y"]
+        self.rp1_lat += preload_data["rp1_lat"]
+        self.rp1_lon += preload_data["rp1_lon"]
+        self.rp2_lat += preload_data["rp2_lat"]
+        self.rp2_lon += preload_data["rp2_lon"]
+        self.bearing += preload_data["bearing"]
+        self.local_heading += preload_data["local_heading"]
+        self.velocity += preload_data["velocity"]
 
 
 if __name__ == "__main__":

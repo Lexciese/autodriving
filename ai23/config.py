@@ -6,6 +6,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class GlobalConfig:
+    use_gpu = True
     bev_h = 128
     bev_w = 256
     front_h = 64
@@ -14,7 +15,7 @@ class GlobalConfig:
     hz = 4 #1 detik ada berapa sample yang direcord
     bias_basic = 15
     bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic] #dalam derajat #bias untuk 0 ke 60, 60 ke 120, 120 ke 180, -180 ke -120, -120 ke -60, -60 ke 0
-    rp1_close = 4 #jarak minimum untuk ganti rp1 (dalam meter)   
+    rp1_close = 4 #jarak minimum untuk ganti rp1 (dalam meter)
 
     #for training
     gpu_id = '0'
@@ -47,7 +48,7 @@ class GlobalConfig:
     val_conditions = ['noon', 'evening', 'night'] #pokoknya kebalikannya train
     test_conditions = ['noon0', 'evening0', 'night0',
                         'noon1', 'evening1', 'night1',
-                        'noon2', 'evening2', 'night2'] 
+                        'noon2', 'evening2', 'night2']
 
 
     # Controller
@@ -91,15 +92,15 @@ class GlobalConfig:
                         [255, 0, 0], [30, 30, 255], [200, 40, 255], [90, 30, 150],
                         [255, 0, 255], [255, 150, 255], [75, 0, 75], [75, 0, 175],
                         [0, 200, 255], [50, 120, 255], [0, 175, 0], [0, 60, 135],
-                        [80, 240, 150], [150, 240, 255], [0, 0, 255]],  
+                        [80, 240, 150], [150, 240, 255], [0, 0, 255]],
         'classes'       : ['unlabeled', 'car', 'bicycle', 'motorcycle', 'truck',
-                            'other-vehicle', 'person', 'bicyclist', 'motorcyclist', 
-                            'road', 'parking', 'sidewalk', 'other-ground', 
+                            'other-vehicle', 'person', 'bicyclist', 'motorcyclist',
+                            'road', 'parking', 'sidewalk', 'other-ground',
                             'building', 'fence', 'vegetation', 'trunk',
                             'terrain', 'pole', 'traffic-sign']
     }
     n_class = len(SEG_CLASSES['colors'])
-    
+
     #lidar setting, cek HDL-32E dan VLP32C LiDAR sensor datasheet
     lidar_sensor = "rs32" #vlp32c hdl32e mid360
     if lidar_sensor == "hdl32e":

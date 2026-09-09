@@ -13,9 +13,9 @@ from torch.utils.tensorboard import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 import shutil
-from model import xr20
-from dataloader import KarrDataset
-from config import GlobalConfig
+from ai23.model import xr20
+from ai23.dataloader import KarrDataset
+from ai23.config import GlobalConfig
 
 
 # Class untuk penyimpanan dan perhitungan update loss

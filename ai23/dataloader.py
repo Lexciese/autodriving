@@ -18,7 +18,7 @@ class KarrDataset(Dataset):
         self.config = config
         self.seq_len = self.config.seq_len
         self.pred_len = self.config.pred_len
-        self.data_rate = self.config.data_rate
+        self.data_rate = self.config.hz
         self.rp1_close = self.config.rp1_close
 
         self.rgb = []

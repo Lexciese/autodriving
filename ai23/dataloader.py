@@ -82,6 +82,12 @@ class KarrDataset(Dataset):
                 rp_list['route_point']['latitude'].append(rp_list['last_point']['latitude'])
                 rp_list['route_point']['longitude'].append(rp_list['last_point']['longitude'])
 
+            _first_current_file = self.files[self.seq_len - 2] if self.seq_len >= 2 else self.files[0]
+            with open(f"{self.dir_meta}/{_first_current_file}.yml", "r") as _f:
+                _meta_init = yaml.safe_load(_f)
+            prev_lat = _meta_init["global_position_latlon"][0]
+            prev_lon = _meta_init["global_position_latlon"][1]
+
             # Past: [current_idx - seq_len + 1, current_idx]
             # Current: self.files[current_idx]
             # Future: current_idx + data_rate, current_idx + 2*data_rate,
@@ -113,11 +119,32 @@ class KarrDataset(Dataset):
                 seq_local_y.append(meta_current["local_position_xyz"][1])
                 local_quaternion = meta_current["local_orientation_xyzw"]
                 seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
-                preload_data["lat"].append(meta_current["global_position_latlon"][0])
-                preload_data["lon"].append(meta_current["global_position_latlon"][1])
+                curr_lat = meta_current["global_position_latlon"][0]
+                curr_lon = meta_current["global_position_latlon"][1]
+                preload_data["lat"].append(curr_lat)
+                preload_data["lon"].append(curr_lon)
                 velocity = np.abs(meta_current["velocity"])
                 preload_data["velocity"].append(velocity)
-                preload_data["bearing"].append(69) # TODO: implement bearing switching between latlon_to_yaw and IMU
+
+                if velocity > 0.5:
+                    bearing_latlon = latlon_to_yaw(
+                        curr_lat, curr_lon, prev_lat, prev_lon,
+                        offset=0.0
+                        )
+                    preload_data["bearing"].append(bearing_latlon)
+                else:
+                    _, _, bearing_witmotion = euler_from_quaternion(
+                        w=meta_current['global_orientation_xyzw'][3],
+                        x=meta_current['global_orientation_xyzw'][0],
+                        y=meta_current['global_orientation_xyzw'][1],
+                        z=meta_current['global_orientation_xyzw'][2],
+                        rad=True
+                        )
+                    bearing_witmotion = np.degrees(bearing_witmotion) - 90
+                    bearing_witmotion = np.radians(bearing_witmotion)
+                    preload_data["bearing"].append(bearing_witmotion)
+
+                prev_lat, prev_lon = curr_lat, curr_lon
 
                 about_to_finish = False
                 for j in range(2):

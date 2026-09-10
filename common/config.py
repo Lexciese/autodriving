@@ -69,7 +69,7 @@ class GlobalConfig:
     wp_gap = int(hz*5) #berapa frame?
     gap_bearing = wp_gap #buat estimasi bearing berapa frame?
     root_dir = str(_REPO_ROOT / 'dataset' / 'dataset')
-    logdir = root_dir+logdir+"_seq"+str(seq_len)+f"_{string_date}" #update direktori name
+    logdir = str(_REPO_ROOT / logdir)+"_seq"+str(seq_len)+f"_{string_date}" #update direktori name
     train_dir = root_dir+'/train_routes'
     val_dir = root_dir+'/val_routes'
     test_dir = root_dir+'/test_routes'
@@ -218,3 +218,25 @@ class GlobalConfig:
     def __init__(self, **kwargs):
         for k,v in kwargs.items():
             setattr(self, k, v)
+
+
+def select_logdir(log_root=None):
+    log_root = Path(log_root) if log_root else (_REPO_ROOT / "log")
+    runs = [d for d in log_root.iterdir() if d.is_dir()] if log_root.is_dir() else []
+    if not runs:
+        raise FileNotFoundError(f"No log runs found under {log_root}")
+    runs.sort(key=lambda d: d.stat().st_mtime, reverse=True)  # newest first
+    print(f"Available log runs under {log_root}:")
+    for i, d in enumerate(runs, 1):
+        incomplete = []
+        if not (d / "config.py").is_file():
+            incomplete.append("missing config.py")
+        if not (d / "best_model.pth").is_file():
+            incomplete.append("missing best_model.pth")
+        suffix = f"  <-- incomplete: {', '.join(incomplete)}" if incomplete else ""
+        print(f"  [{i}] {d.name}{suffix}")
+    while True:
+        choice = input(f"Select log run [1-{len(runs)}]: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(runs):
+            return str(runs[int(choice) - 1])
+        print("Invalid selection, please try again.")

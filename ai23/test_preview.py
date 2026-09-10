@@ -20,7 +20,7 @@ from ai23.dataloader import KarrDataset
 from preprocessing.data_util import plot_lidbev_rpwp, plot_lidfront_rpwp
 
 # use the config from the log directory
-from ai23.config import GlobalConfig
+from ai23.config import GlobalConfig, select_logdir
 import importlib.util
 
 #Class untuk penyimpanan dan perhitungan update metric
@@ -143,19 +143,21 @@ def test(data_loader, model, config):
                 x_frame, y_frame = plot_lidfront_rpwp(config, rp_xy[0], rp_xy[1])
                 rp_lidfront_frame.append(np.array([x_frame, y_frame]))
 
-            # filename_base = data['filename'][-1]
-            # if filename_base.endswith('.yml'):
-            #     filename_base = filename_base[:-4]
-            # if '/' in filename_base:
-            #     fn_parts = filename_base.split('/')
-            #     filenum = fn_parts[-1]
-            #     route_path = '/'.join(fn_parts[:-1])
-            #     base_dir = config.datadir + route_path + "/"
-            # else:
-            #     filenum = filename_base
-            #     base_dir = config.datadir
+            filename_base = data['filename'][-1]
+            if filename_base.endswith('.yml'):
+                filename_base = filename_base[:-4]
+            if '/' in filename_base:
+                fn_parts = filename_base.split('/')
+                filenum = fn_parts[-1]
+                # route_path = '/'.join(fn_parts[:-1])
+                # base_dir = config.datadir + route_path + "/"
+            else:
+                filenum = filename_base
+                # base_dir = config.datadir
 
-            base_dir = "/media/mf/SATA4TB/autodriving/datasetx/2026-09-07_route00"
+            base_dir = "/media/mf/SATA4TB/autodriving/datasetx/2026-09-07_route00/"
+
+
             ddir_lidseg_bev = base_dir + "lidar/img/bev_seg/"
             ddir_lidseg_fro = base_dir + "lidar/img/front_seg/"
             ddir_liddep_bev = base_dir + "lidar/img/bev_dep/"
@@ -288,8 +290,8 @@ def main():
     # Load default config
     config = GlobalConfig()
 
-    # Load config from the saved log (override with AUTODRIVING_LOGDIR if set)
-    logdir = os.environ.get("AUTODRIVING_LOGDIR", config.logdir)
+    # Load config from the selected log run
+    logdir = select_logdir()
     config_path = os.path.join(logdir, "config.py")
     spec = importlib.util.spec_from_file_location("config", config_path)
     log_config = importlib.util.module_from_spec(spec)

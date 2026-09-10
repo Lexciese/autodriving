@@ -17,7 +17,7 @@ from ai23.model import xr20
 from ai23.dataloader import KarrDataset
 
 # use the config from the log directory
-from ai23.config import GlobalConfig
+from ai23.config import GlobalConfig, select_logdir
 import importlib.util
 
 #Class untuk penyimpanan dan perhitungan update metric
@@ -146,8 +146,8 @@ def main():
     # Load default config
     config = GlobalConfig()
 
-    # Load config from the saved log (override with AUTODRIVING_LOGDIR if set)
-    logdir = os.environ.get("AUTODRIVING_LOGDIR", config.logdir)
+    # Load config from the selected log run
+    logdir = select_logdir()
     config_path = os.path.join(logdir, "config.py")
     spec = importlib.util.spec_from_file_location("config", config_path)
     log_config = importlib.util.module_from_spec(spec)

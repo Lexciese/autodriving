@@ -190,6 +190,7 @@ class KarrDataset(Dataset):
 
     def __getitem__(self, index):
         data = dict()
+        data['filename'] = self.filename[index]
         data['bev_deps'] = []
         data['bev_segs'] = []
         data['front_deps'] = []
@@ -249,6 +250,10 @@ class KarrDataset(Dataset):
         dLon2_m = (self.rp2_lon[index] - lon_robot) * 40075000 * np.cos(np.radians(lat_robot)) / 360
         data['rp1'] = tuple(R_matrix.T.dot(np.array([dLon1_m, dLat1_m])))
         data['rp2'] = tuple(R_matrix.T.dot(np.array([dLon2_m, dLat2_m])))
+        data['rp1_lat'] = self.rp1_lat[index]
+        data['rp2_lat'] = self.rp2_lat[index]
+        data['rp1_lon'] = self.rp1_lon[index]
+        data['rp2_lon'] = self.rp2_lon[index]
 
         data["velocity"] = self.velocity[index]
         data['bearing_robot'] = np.degrees(bearing_robot)

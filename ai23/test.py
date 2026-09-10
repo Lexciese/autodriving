@@ -7,8 +7,9 @@ import numpy as np
 import cv2
 from torch import torch
 import yaml
+from pathlib import Path
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
@@ -44,11 +45,12 @@ def test(data_loader, model, config):
         ('test_wp_metric', []),
         ('model_elapsed_time', []),
     ])
-    last_kondisi = '' # flag buat log csv baru
     batch_ke = 1
 
     save_dir = config.logdir + "/offline_test/"
     os.makedirs(save_dir, exist_ok=True)
+    save_dir_log = save_dir
+    os.makedirs(save_dir_log, exist_ok=True)
 
     model.eval()
 
@@ -56,37 +58,6 @@ def test(data_loader, model, config):
         prog_bar = tqdm(total=len(data_loader))
 
         for data in data_loader:
-            #cek condition terakhir
-            if data['condition'][-1] != last_kondisi:
-                last_kondisi = data['condition'][-1]
-                batch_ke = 1
-
-                if len(log['batch']) != 0:
-                    #ketika semua sudah selesai, hitung rata2 performa pada log
-                    log['batch'].append("avg")
-                    log['test_metric'].append(np.mean(log['test_metric']))
-                    log['test_wp_metric'].append(np.mean(log['test_wp_metric']))
-                    log['model_elapsed_time'].append(np.mean(log['model_elapsed_time']))
-
-                    #ketika semua sudah selesai, hitung VARIANCE performa pada log
-                    log['batch'].append("stddev")
-                    log['test_metric'].append(np.std(log['test_metric'][:-1]))
-                    log['test_wp_metric'].append(np.std(log['test_wp_metric'][:-1]))
-                    log['model_elapsed_time'].append(np.std(log['model_elapsed_time'][:-1]))
-                    pd.DataFrame(log).to_csv(save_dir_log+'/test_log.csv', index=False)
-
-                #buat save dir log baru
-                save_dir_log = save_dir+last_kondisi
-                os.makedirs(save_dir_log, exist_ok=True)
-
-                #reset log untuk menyimpan test log baru di CSV
-                log = OrderedDict([
-                    ('batch', []),
-                    ('test_metric', []),
-                    ('test_wp_metric', []),
-                    ('model_elapsed_time', []),
-                ])
-
             start_time = time.time()
             bev_segs = []
             bev_deps = []
@@ -132,19 +103,20 @@ def test(data_loader, model, config):
             pd.DataFrame(log).to_csv(save_dir_log+'/test_log.csv', index=False)
 
             #save metadata prediksi
-            save_dir_meta = save_dir+last_kondisi+'/'+data['route'][-1]+'/pred_meta/'
+            save_dir_meta = save_dir+'/pred_meta/'
             os.makedirs(save_dir_meta, exist_ok=True)
             #isikan beberapa data
+            meta_pred = {}
             meta_pred['rp1_pos_local'] = rp1[0].cpu().detach().numpy().tolist()
             meta_pred['rp2_pos_local'] = rp2[0].cpu().detach().numpy().tolist()
-            meta_pred['rp1_pos_global'] = np.array([data['lat_rp1'].item(), data['lon_rp1'].item()]).tolist()
-            meta_pred['rp2_pos_global'] = np.array([data['lat_rp2'].item(), data['lon_rp2'].item()]).tolist()
+            meta_pred['rp1_pos_global'] = np.array([data['rp1_lat'].item(), data['rp1_lon'].item()]).tolist()
+            meta_pred['rp2_pos_global'] = np.array([data['rp2_lat'].item(), data['rp2_lon'].item()]).tolist()
             meta_pred['robot_bearing'] = float(data['bearing_robot'].item())
             meta_pred['robot_pos_global'] = np.array([data['lat_robot'].item(), data['lon_robot'].item()]).tolist()
             meta_pred['model_fps'] = float(1/model_elapsed_time)
             elapsed_time = time.time() - start_time #hitung elapsedtime
             meta_pred['fps'] = float(1/elapsed_time)
-            with open(save_dir_meta+data['filename'][-1]+"yml", 'w') as dict_file:
+            with open(save_dir_meta+data['filename'][-1]+".yml", 'w') as dict_file:
                 yaml.dump(meta_pred, dict_file)
 
             batch_ke += 1

@@ -288,12 +288,14 @@ def main():
     # Load default config
     config = GlobalConfig()
 
-    # Load config from the saved log
-    spec = importlib.util.spec_from_file_location("config", str(config.logdir))
+    # Load config from the saved log (override with AUTODRIVING_LOGDIR if set)
+    logdir = os.environ.get("AUTODRIVING_LOGDIR", config.logdir)
+    config_path = os.path.join(logdir, "config.py")
+    spec = importlib.util.spec_from_file_location("config", config_path)
     log_config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(log_config)
-    log_config = log_config.GlobalConfig()
-    config = log_config
+    config = log_config.GlobalConfig()
+    config.logdir = logdir
 
 
     #SET GPU YANG AKTIF

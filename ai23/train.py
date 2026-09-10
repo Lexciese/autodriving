@@ -16,6 +16,7 @@ import shutil
 from ai23.model import xr20
 from ai23.dataloader import KarrDataset
 from ai23.config import GlobalConfig
+import common.config
 
 
 # Class untuk penyimpanan dan perhitungan update loss
@@ -291,7 +292,7 @@ def main():
         os.makedirs(config.logdir, exist_ok=True)
         print('Created new retrain dir:', config.logdir)
 
-    config_file_path = os.path.join(os.path.dirname(__file__), 'config.py')
+    config_file_path = common.config.__file__
     shutil.copyfile(config_file_path, os.path.join(config.logdir, 'config.py'))
 
     log = OrderedDict([

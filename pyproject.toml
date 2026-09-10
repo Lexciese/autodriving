@@ -9,4 +9,4 @@ description = "Lidar-only waypoint prediction for autonomous driving (DeepIPCv2 
 requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
-include = ["ai23*", "preprocessing*"]
+include = ["ai23*", "preprocessing*", "common*"]

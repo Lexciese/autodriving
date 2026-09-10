@@ -143,6 +143,10 @@ class GlobalConfig:
     cam_cover_area_lr = 8  # left-right
     cam_cover_area_rf = [0, 16]  # camera position to max area of interest
     dep_min = cover_area_f[0]  # minimum depth for front/BEV depth normalization
+    # Depth-encoding multipliers
+    bev_multiplier = 9
+    front_multiplier = 9
+    rear_multiplier = 9
 
     # PolarSeg
     ignore_label = 0

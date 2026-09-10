@@ -160,7 +160,7 @@ class PreprocessingLidar(Preprocessing):
             return_fea = torch.cat((return_xyz, sig[:,None]), dim=1)
             return grid_ind.long(), return_fea
 
-    def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg, gpu=False, bev_multiplier=4, front_multiplier=7, rear_multiplier=9, config=None, bs=None):
+    def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg, gpu=False, config=None, bs=None):
         cfg = config
         if config == None:
             cfg = self.config
@@ -208,7 +208,7 @@ class PreprocessingLidar(Preprocessing):
             # This gives higher resolution for near objects.
 
             idx_bev_d = np.argwhere(valid_bev)  # (N_valid, 1)
-            linear_d = np.clip(bev_multiplier * (d_lidar[idx_bev_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
+            linear_d = np.clip(cfg.bev_multiplier * (d_lidar[idx_bev_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
             log_d = -np.log(linear_d) + 1   # ranges from 1 (near) to ~ -1.3 (far)
 
             bev_dep = np.zeros((bs, 1, cfg.lidbev_h, cfg.lidbev_w))
@@ -255,7 +255,7 @@ class PreprocessingLidar(Preprocessing):
 
             # Front depth
             idx_front_d = np.argwhere(valid_front)
-            linear_d_front = np.clip(front_multiplier * (d_lidar[idx_front_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
+            linear_d_front = np.clip(cfg.front_multiplier * (d_lidar[idx_front_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
             log_d_front = -np.log(linear_d_front) + 1
 
             front_dep = np.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w))
@@ -274,7 +274,7 @@ class PreprocessingLidar(Preprocessing):
 
             # Rear depth
             idx_rear_d = np.argwhere(valid_rear)
-            linear_d_rear = np.clip(rear_multiplier * (d_lidar[idx_rear_d] - cfg.dep_min) /
+            linear_d_rear = np.clip(cfg.rear_multiplier * (d_lidar[idx_rear_d] - cfg.dep_min) /
                                     (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
             log_d_rear = -np.log(linear_d_rear) + 1
 
@@ -318,7 +318,7 @@ class PreprocessingLidar(Preprocessing):
             # This gives higher resolution for near objects.
 
             idx_bev_d = valid_bev.nonzero()  # (N_valid, 1)
-            linear_d = torch.clip(bev_multiplier * (d_lidar[idx_bev_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
+            linear_d = torch.clip(cfg.bev_multiplier * (d_lidar[idx_bev_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
             log_d = -torch.log(linear_d) + 1   # ranges from 1 (near) to ~ -1.3 (far)
 
             bev_dep = torch.zeros((bs, 1, cfg.lidbev_h, cfg.lidbev_w), dtype=cfg.dtype, device=cfg.gpu_device)
@@ -366,7 +366,7 @@ class PreprocessingLidar(Preprocessing):
 
             # Front depth
             idx_front_d = valid_front.nonzero()
-            linear_d_front = torch.clip(front_multiplier * (d_lidar[idx_front_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
+            linear_d_front = torch.clip(cfg.front_multiplier * (d_lidar[idx_front_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
             log_d_front = -torch.log(linear_d_front) + 1
 
             front_dep = torch.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w), dtype=cfg.dtype, device=cfg.gpu_device)
@@ -386,7 +386,7 @@ class PreprocessingLidar(Preprocessing):
 
             # Rear depth
             idx_rear_d = valid_rear.nonzero()
-            linear_d_rear = torch.clip(rear_multiplier * (d_lidar[idx_rear_d] - cfg.dep_min) /
+            linear_d_rear = torch.clip(cfg.rear_multiplier * (d_lidar[idx_rear_d] - cfg.dep_min) /
                                     (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
             log_d_rear = -torch.log(linear_d_rear) + 1
 

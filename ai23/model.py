@@ -4,6 +4,8 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 import numpy as np
 
+from ai23.config import GlobalConfig
+
 def kaiming_init(m):
     if isinstance(m, nn.Conv2d):
         nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
@@ -71,9 +73,9 @@ class NecksNet(nn.Module):
 
 
 class xr20(nn.Module):
-    def __init__(self, config, device):
+    def __init__(self, config: GlobalConfig, device):
         super().__init__()
-        self.config = config
+        self.config: GlobalConfig = config
         self.gpu_device = device
 
         feature_map = [48, 96, 192, 384]

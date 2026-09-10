@@ -17,9 +17,9 @@ from preprocessing.preprocessing import Preprocessing
 from preprocessing.config import GlobalConfig
 
 class PreprocessingLidar(Preprocessing):
-    def __init__(self, config):
+    def __init__(self, config: GlobalConfig):
         super().__init__("lidar")
-        self.config = config
+        self.config: GlobalConfig = config
         self.pcd = None
 
         if self.config.use_gpu == False:
@@ -160,10 +160,8 @@ class PreprocessingLidar(Preprocessing):
             return_fea = torch.cat((return_xyz, sig[:,None]), dim=1)
             return grid_ind.long(), return_fea
 
-    def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg, gpu=False, config=None, bs=None):
-        cfg = config
-        if config == None:
-            cfg = self.config
+    def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg, gpu=False, config: GlobalConfig | None = None, bs=None):
+        cfg: GlobalConfig = config if config is not None else self.config
         if bs == None:
             bs = cfg.bs
         total_pts = len(ptx)

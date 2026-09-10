@@ -3,6 +3,8 @@ import cv2
 import torch
 import torch.nn.functional as F
 
+from ai23.config import GlobalConfig
+
 def swap_RGB2BGR(matrix):
     red = matrix[:,:,0].copy()
     blue = matrix[:,:,2].copy()
@@ -154,7 +156,7 @@ def transform_2d_points(xyz, r1, t1_x, t1_y, r2, t2_x, t2_y):
     return out
 
 #buat ngecek GT SEG aja
-def check_gt_seg(config, gt_seg):
+def check_gt_seg(config: GlobalConfig, gt_seg):
     gt_seg = gt_seg.cpu().detach().numpy()
 
     #buat array untuk nyimpan out gambar
@@ -201,7 +203,7 @@ def BCEDice(Yp, Yt, smooth=1e-7):
 
 
 #fungsi renormalize loss weights seperti di paper gradnorm
-def renormalize_params_lw(current_lw, config):
+def renormalize_params_lw(current_lw, config: GlobalConfig):
     #detach dulu paramsnya dari torch, pindah ke CPU
     lw = np.array([tens.cpu().detach().numpy() for tens in current_lw])
     lws = np.array([lw[i][0] for i in range(len(lw))])

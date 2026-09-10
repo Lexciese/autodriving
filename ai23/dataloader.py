@@ -13,9 +13,9 @@ from ai23.config import GlobalConfig
 from preprocessing.preprocessing_lidar import PreprocessingLidar
 
 class KarrDataset(Dataset):
-    def __init__(self, config):
+    def __init__(self, config: GlobalConfig):
         self.preproc_lidar = PreprocessingLidar(config=config)
-        self.config = config
+        self.config: GlobalConfig = config
         self.seq_len = self.config.seq_len
         self.pred_len = self.config.pred_len
         self.data_rate = self.config.hz

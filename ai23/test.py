@@ -19,6 +19,7 @@ from ai23.dataloader import KarrDataset
 # use the config from the log directory
 from ai23.config import GlobalConfig, select_logdir
 import importlib.util
+from typing import cast
 
 #Class untuk penyimpanan dan perhitungan update metric
 class AverageMeter(object):
@@ -33,7 +34,7 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-def test(data_loader, model, config):
+def test(data_loader, model, config: GlobalConfig):
     score = {
         'total_metric': AverageMeter(),
         'wp_metric': AverageMeter()
@@ -144,7 +145,7 @@ def test(data_loader, model, config):
 
 def main():
     # Load default config
-    config = GlobalConfig()
+    config: GlobalConfig = GlobalConfig()
 
     # Load config from the selected log run
     logdir = select_logdir()
@@ -152,7 +153,7 @@ def main():
     spec = importlib.util.spec_from_file_location("config", config_path)
     log_config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(log_config)
-    config = log_config.GlobalConfig()
+    config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
 
 

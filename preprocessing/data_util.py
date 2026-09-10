@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import cv2
+
+from preprocessing.config import GlobalConfig
 #DARI POLARSEG dataset.py
 #fokus cuma ambil grid_ind dan return_fea aja
 
@@ -11,7 +13,7 @@ def cart2polar(input_xyz):
     return np.stack((rho,phi,input_xyz[:,2]),axis=1)
 
 
-def preproc_spherical(raw_data, config):
+def preproc_spherical(raw_data, config: GlobalConfig):
     #load binfile yang berisi xyz-intensity dan split ke xyz dan sig
     xyz = raw_data[:,:3]
     # xyz = xyz[:,[1, 0, 2]] #tidak perlu karena polarnet sudah robust terhadap rotasi berapapun
@@ -44,7 +46,7 @@ def torch_cart2polar(input_xyz):
     return torch.stack((rho,phi,input_xyz[:,2]),dim=1)
 
 
-def torch_preproc_spherical(raw_data, config):
+def torch_preproc_spherical(raw_data, config: GlobalConfig):
     # convert coordinate into polar coordinates
     xyz_pol = torch_cart2polar(raw_data[:,:3])
     sig = torch.clip(raw_data[:,3]/config.max_intensity, 0.0, 1.0) #intensity harus discale/clip dalam range 0 - 1.0, baca lidarsegdep_bev_front/check.py
@@ -108,7 +110,7 @@ def resizecrop_matrix(image, WH_resized=[256, 128], D3=True, crop_HW=[128, 256])
     return cropped_im
 
 
-def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg):
+def gen_bev_front_rear_seg_dep(self: GlobalConfig, ptx, pty, ptz, ptseg):
     #flatten all
     ptx = ptx.ravel()
     pty = pty.ravel()
@@ -243,7 +245,7 @@ def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg):
 
 
 
-def gen_top_view_sdc(pt_cloud_x, pt_cloud_z, semseg, configx):
+def gen_top_view_sdc(pt_cloud_x, pt_cloud_z, semseg, configx: GlobalConfig):
     #init
 
     #proses awal
@@ -369,7 +371,7 @@ def transform_2d_points(xyz, r1, t1_x, t1_y, r2, t2_x, t2_y):
     return out
 
 
-def plot_sdc_rpwp(configx, local_bev_x, local_bev_y):
+def plot_sdc_rpwp(configx: GlobalConfig, local_bev_x, local_bev_y):
     #komputasi dari lokal ke bev frame buat visualisasi
     x_img = (local_bev_x+configx.cam_cover_area_lr)*(configx.cam_w-1)/(2*configx.cam_cover_area_lr)
     y_img = ((local_bev_y-configx.cam_cover_area_rf[0])*(1-configx.cam_h)/(configx.cam_cover_area_rf[1]-configx.cam_cover_area_rf[0])) + (configx.cam_h-1)
@@ -383,7 +385,7 @@ def plot_sdc_rpwp(configx, local_bev_x, local_bev_y):
 
 
 
-def plot_lidbev_rpwp(configx, local_bev_x, local_bev_y):
+def plot_lidbev_rpwp(configx: GlobalConfig, local_bev_x, local_bev_y):
     #komputasi dari lokal ke bev frame buat visualisasi
     x_img = (local_bev_x+configx.lid_cover_area_lr)*(configx.lidbev_w-1)/(2*configx.lid_cover_area_lr)
     y_img = ((local_bev_y-configx.lid_cover_area_rf[0])*(1-configx.lidbev_h)/(configx.lid_cover_area_rf[1]-configx.lid_cover_area_rf[0])) + (configx.lidbev_h-1)
@@ -396,7 +398,7 @@ def plot_lidbev_rpwp(configx, local_bev_x, local_bev_y):
     return x_img, y_img
 
 #baca: https://github.com/collector-m/lidar_projection/blob/master/show.py
-def plot_lidfront_rpwp(configx, local_bev_x, local_bev_y):
+def plot_lidfront_rpwp(configx: GlobalConfig, local_bev_x, local_bev_y):
     y_road = configx.lid_cover_area_bt[0] #-1.5 #ketinggian jalan dari perspektif posisi LiDAR, dalam meter
     xy_euclid = np.sqrt(local_bev_x**2 + local_bev_y**2)
 

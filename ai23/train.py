@@ -36,7 +36,7 @@ class AverageMeter(object):
 
 
 # fungsi renormalize loss weights seperti di paper gradnorm
-def renormalize_params_lw(current_lw, config):
+def renormalize_params_lw(current_lw, config: GlobalConfig):
     # detach dulu paramsnya dari torch, pindah ke CPU
     lw = np.array([tens.cpu().detach().numpy() for tens in current_lw])
     lws = np.array([lw[i][0] for i in range(len(lw))])
@@ -49,7 +49,7 @@ def renormalize_params_lw(current_lw, config):
 
 
 # FUNGSI TRAINING
-def train(data_loader, model, config, writer, cur_epoch, optimizer, params_lw, optimizer_lw):
+def train(data_loader, model, config: GlobalConfig, writer, cur_epoch, optimizer, params_lw, optimizer_lw):
     # buat variabel untuk menyimpan kalkulasi loss
     score = {
         'total_loss': AverageMeter(),
@@ -159,7 +159,7 @@ def train(data_loader, model, config, writer, cur_epoch, optimizer, params_lw, o
 
 
 # FUNGSI VALIDATION
-def validate(data_loader, model, config, writer, cur_epoch):
+def validate(data_loader, model, config: GlobalConfig, writer, cur_epoch):
     score = {
         'total_loss': AverageMeter(),
         'wp_loss': AverageMeter()
@@ -223,7 +223,7 @@ def validate(data_loader, model, config, writer, cur_epoch):
 
 # MAIN FUNCTION
 def main():
-    config = GlobalConfig()
+    config: GlobalConfig = GlobalConfig()
 
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"

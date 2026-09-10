@@ -2,10 +2,13 @@ import numpy as np
 import torch
 import os
 from pathlib import Path
+from datetime import datetime
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class GlobalConfig:
+    now = datetime.now()
+    string_date = now.strftime("%d_%m_%Y-%H_%M")
     use_gpu = True
     bev_h = lidbev_h = 128
     bev_w = lidbev_w = 256
@@ -37,10 +40,8 @@ class GlobalConfig:
     seq_len = 1 # jumlah input seq
     pred_len = 3 # future waypoints predicted
     n_wp = pred_len #waypoints
-    logdir = logdir+"_seq"+str(seq_len) #update direktori name
-    # root_dir = '/media/aisl/data/oskar/ros-whill-robot2/main/dataset/dataset'
-    # root_dir = '/home/aisl/OSKAR/WHILL/ros-whill-robot2/main/dataset/dataset'
     root_dir = str(_REPO_ROOT / 'dataset' / 'dataset')
+    logdir = root_dir+logdir+"_seq"+str(seq_len)+f"_{string_date}" #update direktori name
     train_dir = root_dir+'/train_routes'
     val_dir = root_dir+'/val_routes'
     test_dir = root_dir+'/test_routes'

@@ -143,17 +143,17 @@ def test(data_loader, model, config):
                 x_frame, y_frame = plot_lidfront_rpwp(config, rp_xy[0], rp_xy[1])
                 rp_lidfront_frame.append(np.array([x_frame, y_frame]))
 
-            filename_base = data['filename'][-1]
-            if filename_base.endswith('.yml'):
-                filename_base = filename_base[:-4]
-            if '/' in filename_base:
-                fn_parts = filename_base.split('/')
-                filenum = fn_parts[-1]
-                route_path = '/'.join(fn_parts[:-1])
-                base_dir = config.datadir + route_path + "/"
-            else:
-                filenum = filename_base
-                base_dir = config.datadir
+            # filename_base = data['filename'][-1]
+            # if filename_base.endswith('.yml'):
+            #     filename_base = filename_base[:-4]
+            # if '/' in filename_base:
+            #     fn_parts = filename_base.split('/')
+            #     filenum = fn_parts[-1]
+            #     route_path = '/'.join(fn_parts[:-1])
+            #     base_dir = config.datadir + route_path + "/"
+            # else:
+            #     filenum = filename_base
+            #     base_dir = config.datadir
 
             base_dir = "/media/mf/SATA4TB/autodriving/datasetx/2026-09-07_route00"
             ddir_lidseg_bev = base_dir + "lidar/img/bev_seg/"

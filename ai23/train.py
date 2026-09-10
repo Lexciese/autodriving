@@ -252,7 +252,7 @@ def main():
 
     train_set = Subset(karr_dataset, train_indices)
     val_set = Subset(karr_dataset, val_indices)
-    test_set = Subset(karr_dataset, test_indices)
+
 
     drop_last = True if len(train_set) % config.batch_size == 1 else False
 

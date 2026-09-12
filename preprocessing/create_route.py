@@ -1,4 +1,3 @@
-
 import yaml
 import os
 import pandas as pd
@@ -21,15 +20,13 @@ for route in route_list:
     #     continue
     if os.path.isfile(configx.datadir+route):  #kalau dia file, maka skip
         continue
-    
+
     ddir_meta = configx.datadir+route+"/meta/"
-    file_list = os.listdir(ddir_meta) 
+    file_list = os.listdir(ddir_meta)
     file_list.sort()
 
     #ngecek
     #file_list = file_list[2001:2500]
-
-
 
     #EKSEKUSI PLOT BEARING GPS vs IMU
 
@@ -58,23 +55,23 @@ for route in route_list:
     plt.savefig(configx.datadir+route+"/"+route+"_bearing_viz.png", bbox_inches='tight', dpi=300)
     plt.close()
 
-    
+
     #AHRS record, cek pergantian heading
     euler_log = OrderedDict([
-		('ekf_r', []),
-		('pose_r', []),
-		('ekf_p', []),
-		('pose_p', []),
-		('ekf_y', []),
+        ('ekf_r', []),
+        ('pose_r', []),
+        ('ekf_p', []),
+        ('pose_p', []),
+        ('ekf_y', []),
         ('ekf_y_maf', []),
-		('pose_y', []),
+        ('pose_y', []),
         ('acc_x', []),
         ('acc_y', []),
         ('acc_z', []),
         ('ang_spd_x', []),
         ('ang_spd_y', []),
         ('ang_spd_z', []),
-	])
+    ])
 
     #cek MAF dan renormalize dari -180 - 180 ke 0 - 360
     with open(ddir_meta+file_list[0], 'r') as first_filexx:
@@ -82,10 +79,10 @@ for route in route_list:
     with open(ddir_meta+file_list[-1], 'r') as last_filexx:
         last_filex = yaml.safe_load(last_filexx)
     sin_angle_buff = deque()
-    
+
     global_orientation_r, global_orientation_p, global_orientation_y = euler_from_quaternion(w=first_filex['global_orientation_xyzw'][3], x=first_filex['global_orientation_xyzw'][0], y=first_filex['global_orientation_xyzw'][1], z=first_filex['global_orientation_xyzw'][2], rad=False)
     global_orientation_rpy = [global_orientation_r, global_orientation_p, global_orientation_y]
-    
+
     if configx.n_buffer!=0:
         for a in range(0, configx.n_buffer*configx.hz-1): #-1 karena nanti akan diappend dulu dengan data baru
             sin_angle_buff.append(np.sin(np.radians(global_orientation_rpy[2])))
@@ -104,7 +101,7 @@ for route in route_list:
             'latitude': [],
             'longitude': [],
         },
-    } 
+    }
     routes['first_point']['latitude'] = first_filex['global_position_latlon'][0]
     routes['first_point']['longitude'] = first_filex['global_position_latlon'][1]
     routes['last_point']['latitude'] = last_filex['global_position_latlon'][0]
@@ -118,15 +115,10 @@ for route in route_list:
     for i in range(0, len(file_list)):
         file_name = file_list[i]
         print(ddir_meta+file_name)
-        
+
         with open(ddir_meta+file_name, 'r') as curr_metafile:
             curr_meta = yaml.safe_load(curr_metafile)
-        
-        #ROUTE BERDASARKAN ASUMSI INTERVAL WAKTU DAN KECEPATAN VEHICLE
-        # if i != 0 and i%(configx.route_gap_time*configx.hz)==0:
-        #     routes['route_point']['latitude'].append(curr_meta['global_position_latlon'][0])
-        #     routes['route_point']['longitude'].append(curr_meta['global_position_latlon'][1])
-        
+
         #ROUTE BERDASARKAN JARAK SESUNGGUHNYA, DIHITUNG DARI LATITUDE LONGITUDE
         #hitung jarak dalam local coordinate, relatif ke prev_latlon
         dLat_m = (curr_meta['global_position_latlon'][0]-prev_lat) * 40008000 / 360 #111320 #Y
@@ -139,19 +131,14 @@ for route in route_list:
             prev_lon = curr_meta['global_position_latlon'][1]
 
         local_orientation_r, local_orientation_p, local_orientation_y = euler_from_quaternion(w=curr_meta['local_orientation_xyzw'][3], x=curr_meta['local_orientation_xyzw'][0], y=curr_meta['local_orientation_xyzw'][1], z=curr_meta['local_orientation_xyzw'][2], rad=False)
-        
+
         #save data ke CSV
-        # print(latest_acc[0][0])
         global_orientation_r, global_orientation_p, global_orientation_y = euler_from_quaternion(w=curr_meta['global_orientation_xyzw'][3], x=curr_meta['global_orientation_xyzw'][0], y=curr_meta['global_orientation_xyzw'][1], z=curr_meta['global_orientation_xyzw'][2], rad=False)
         global_orientation_rpy = [global_orientation_r, global_orientation_p, global_orientation_y]
-    
 
         euler_log['ekf_r'].append(global_orientation_rpy[0])
         euler_log['ekf_p'].append(global_orientation_rpy[1])
         euler_log['ekf_y'].append(global_orientation_rpy[2])
-        # euler_log['pose_r'].append(curr_meta['local_orientation_rpy'][0])
-        # euler_log['pose_p'].append(curr_meta['local_orientation_rpy'][1])
-        # euler_log['pose_y'].append(curr_meta['local_orientation_rpy'][2])
         euler_log['pose_r'].append(local_orientation_r)
         euler_log['pose_p'].append(local_orientation_p)
         euler_log['pose_y'].append(local_orientation_y)
@@ -162,7 +149,7 @@ for route in route_list:
         euler_log['ang_spd_x'].append(curr_meta['angular_speed_xyz'][0])
         euler_log['ang_spd_y'].append(curr_meta['angular_speed_xyz'][1])
         euler_log['ang_spd_z'].append(curr_meta['angular_speed_xyz'][2])
-        
+
         if configx.n_buffer!=0:
             angle_deg = global_orientation_rpy[2]
             sin_angle_buff.append(np.sin(np.radians(angle_deg)))
@@ -180,20 +167,18 @@ for route in route_list:
             euler_log['ekf_y_maf'].append(angle_deg_maf) #kembalikan ke nilai asli
         else:
             euler_log['ekf_y_maf'].append(0)
-        
+
         pd.DataFrame(euler_log).to_csv(configx.datadir+route+"/"+route+"_ahrs_rec.csv", index=False)
-    
-    
+
     #save routepoints ke yaml
     with open(configx.datadir+route+"/"+route+"_routepoint_list.yml", 'w') as c:
         yaml.dump(routes, c)
 
-    #load dari yang sudah diedit hanya untuk visualisasi
-    # with open(datadir+route+"/"+route+"_routepoint_list.yml", 'r') as c:
-    #     routes = yaml.safe_load(c)
-    
+    gnss_lat = [m['global_position_latlon'][0] for m in meta]
+    gnss_lon = [m['global_position_latlon'][1] for m in meta]
+    gnss_df = pd.DataFrame({'latitude': gnss_lat, 'longitude': gnss_lon})
+    gnss_df.to_csv(configx.datadir+route+"/"+route+"_gnss.csv", index=False)
 
-    #plot start-end-route
     plt.grid(linestyle='--')
     plt.gca().set_aspect('equal', adjustable='box')
     x = np.array(routes['route_point']['longitude'])# - routes['first_point']['longitude']

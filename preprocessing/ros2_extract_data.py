@@ -1,12 +1,11 @@
 from pathlib import Path
-from collections import deque
 import yaml
 import numpy as np
 import cv2
+import itertools
 from datetime import date
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
-# from pypcd import pypcd # pip install --upgrade git+https://github.com/klintan/pypcd.git 
 from pypcd4 import PointCloud, Encoding
 from cv_bridge import CvBridge
 from preprocessing.config import GlobalConfig
@@ -21,6 +20,8 @@ BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosb
 DATADIR = configx.datadir
 PREFIX = str(date.today()) + "_route00"
 SLOP_NS = 150_000_000 # 0.15 s
+QUEUE_SIZE = 50
+
 TOPICS = [
     '/gnss/fix',
     '/gnss/fix_velocity',
@@ -46,35 +47,72 @@ for d in dirs.values():
 bridge = CvBridge()
 
 class ApproximateTimeSynchronizer:
-    def __init__(self, topics, slop_ns, callback):
+    def __init__(self, topics, slop_ns, callback, queue_size=100):
         self.topics = topics
         self.slop_ns = slop_ns
         self.callback = callback
-        self.queues = {t: deque() for t in topics}
-
-    def add(self, topic, msg):
-        if topic not in self.queues:
-            return
-        self.queues[topic].append(msg)
-        self._process()
-
-    def _process(self):
-        while all(self.queues[t] for t in self.topics):
-            t0 = {t: self._get_timestamp(self.queues[t][0]) for t in self.topics}
-            min_t = min(t0.values())
-            max_t = max(t0.values())
-            if max_t - min_t <= self.slop_ns:
-                sync_msgs = {t: self.queues[t].popleft() for t in self.topics}
-                self.callback(sync_msgs)
-            else:
-                min_topic = min(t0, key=t0.get)
-                self.queues[min_topic].popleft()
+        self.queue_size = queue_size
+        self.queues = {t: {} for t in topics}
 
     def _get_timestamp(self, msg):
         return msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
 
+    def add(self, topic, msg):
+        if topic not in self.queues:
+            return
+
+        stamp = self._get_timestamp(msg)
+        my_queue = self.queues[topic]
+
+        my_queue[stamp] = msg
+
+        while len(my_queue) > self.queue_size:
+            del my_queue[min(my_queue.keys())]
+
+        self._process(stamp)
+
+    def _process(self, latest_stamp):
+        # Sort and leave only reasonable stamps for synchronization
+        stamps = []
+        topic_list = list(self.topics)
+
+        for t in topic_list:
+            queue = self.queues[t]
+            topic_stamps = []
+
+            for s in queue.keys():
+                stamp_delta = abs(s - latest_stamp)
+                if stamp_delta > self.slop_ns:
+                    continue  # far over the slop
+                topic_stamps.append((s, stamp_delta))
+
+            if not topic_stamps:
+                return
+            topic_stamps.sort(key=lambda x: x[1])
+            stamps.append(topic_stamps)
+
+        for vv in itertools.product(*[[s[0] for s in ts] for ts in stamps]):
+            vv = list(vv)
+            if (max(vv) - min(vv)) < self.slop_ns:
+                valid = True
+                for t, s in zip(topic_list, vv):
+                    if s not in self.queues[t]:
+                        valid = False
+                        break
+
+                if not valid:
+                    continue
+                sync_msgs = {t: self.queues[t][s] for t, s in zip(topic_list, vv)}
+
+                self.callback(sync_msgs)
+
+                for t, s in zip(topic_list, vv):
+                    del self.queues[t][s]
+
+                break
+
     def flush(self):
-        self._process()
+        pass
 
 def save(sync_data):
     first_topic = next(iter(sync_data))
@@ -135,7 +173,7 @@ def main():
     typestore = get_typestore(Stores.ROS2_HUMBLE)
     with AnyReader([BAG], default_typestore=typestore) as reader:
         conns = [c for c in reader.connections if c.topic in TOPICS]
-        synchronizer = ApproximateTimeSynchronizer(TOPICS, SLOP_NS, save)
+        synchronizer = ApproximateTimeSynchronizer(TOPICS, SLOP_NS, save, QUEUE_SIZE)
 
         total = 0
         for c in conns:
@@ -154,8 +192,6 @@ def main():
             if not hasattr(msg, 'header'):
                 continue
             synchronizer.add(conn.topic, msg)
-
-        synchronizer.flush()
 
 if __name__ == "__main__":
     main()

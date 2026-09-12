@@ -57,10 +57,11 @@ class KarrDataset(Dataset):
             "velocity": []
         }
 
-        self.root_path = ["/media/mf/SATA4TB/autodriving/datasetx/2026-09-07_route00"]
+        self.route_list = os.listdir(config.datadir)
+        self.route_list.sort()
 
-        for path in self.root_path:
-            path = Path(path)
+        for route in self.route_list:
+            path = Path(f"{self.config.datadir}/{route}")
             preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}.npy"
             if os.path.exists(preload_path):
                 self.preload_data = np.load(preload_path, allow_pickle=True)
@@ -77,7 +78,7 @@ class KarrDataset(Dataset):
             self.files = [os.path.splitext(filename)[0] for filename in self.files] # remove extension string
             self.len_files = len(self.files)
 
-            with open(path / "routepoint_list.yml", "r") as rp_listx:
+            with open(path / f"{route}_routepoint_list.yml", "r") as rp_listx:
                 rp_list = yaml.safe_load(rp_listx)
                 #assign end point sebagai route terakhir
                 rp_list['route_point']['latitude'].append(rp_list['last_point']['latitude'])

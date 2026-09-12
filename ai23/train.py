@@ -245,11 +245,9 @@ def main():
     # train: 80%, validation: 10%, test: 10%
     train_len = int(0.8 * total_len)
     val_len = int(0.1 * total_len)
-    test_len = total_len - train_len - val_len
 
     train_indices = list(range(0, train_len))
     val_indices = list(range(train_len, train_len + val_len))
-    test_indices = list(range(train_len + val_len, total_len))
 
     train_set = Subset(karr_dataset, train_indices)
     val_set = Subset(karr_dataset, val_indices)

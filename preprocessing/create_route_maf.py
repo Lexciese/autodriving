@@ -185,16 +185,16 @@ for route in route_list:
         else:
             euler_log['ekf_y_maf'].append(0)
 
-        pd.DataFrame(euler_log).to_csv(configx.datadir+route+"/"+route+"_ahrs_rec_maf.csv", index=False)
+        pd.DataFrame(euler_log).to_csv(configx.datadir+route+"/"+route+f"_ahrs_rec_maf_w{gnss_window_size}.csv", index=False)
 
     #save routepoints ke yaml
-    with open(configx.datadir+route+"/"+route+"_routepoint_list_maf.yml", 'w') as c:
+    with open(configx.datadir+route+"/"+route+f"_routepoint_list_maf_w{gnss_window_size}.yml", 'w') as c:
         yaml.dump(routes, c)
 
     gnss_lat = [m['global_position_latlon'][0] for m in meta]
     gnss_lon = [m['global_position_latlon'][1] for m in meta]
     gnss_df = pd.DataFrame({'latitude': gnss_lat, 'longitude': gnss_lon})
-    gnss_df.to_csv(configx.datadir+route+"/"+route+"_gnss_maf.csv", index=False)
+    gnss_df.to_csv(configx.datadir+route+"/"+route+f"_gnss_maf_w{gnss_window_size}.csv", index=False)
 
     plt.grid(linestyle='--')
     plt.gca().set_aspect('equal', adjustable='box')
@@ -211,7 +211,7 @@ for route in route_list:
     plt.ylabel('Latitude (deg)')
     plt.title("Route Points")
     plt.legend(loc='lower right')
-    plt.savefig(configx.datadir+route+"/"+route+"_routepoint_viz_maf.png", bbox_inches='tight', dpi=300)
+    plt.savefig(configx.datadir+route+"/"+route+f"_routepoint_viz_maf_w{gnss_window_size}.png", bbox_inches='tight', dpi=300)
     plt.close()
 
     #plot ahrs, orientasi terhadap utara, angle yaw

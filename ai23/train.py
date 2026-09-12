@@ -93,7 +93,6 @@ def train(data_loader, model, config: GlobalConfig, writer, cur_epoch, optimizer
         pred_wp = model(bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, gt_velocity)
 
         # compute loss
-        print("wp: ", gt_waypoints)
         loss_wp = F.l1_loss(pred_wp, gt_waypoints)
         total_loss = params_lw[0] * loss_wp
 

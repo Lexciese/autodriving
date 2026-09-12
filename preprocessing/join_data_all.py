@@ -180,7 +180,9 @@ for route in route_list:
         lidar_front_segcol_wprp = lidar_front_segcol.copy()
 
         for k in range(2):
-            lidar_bev_segcol_wprp = cv2.circle(lidar_bev_segcol_wprp, (rp_lidbev_frame[k][0], rp_lidbev_frame[k][1]), radius=3, color=(255, 255, 255), thickness=2)
+            bev_color = (255, 255, 255) if k == 0 else (255, 255, 0)
+    
+            lidar_bev_segcol_wprp = cv2.circle(lidar_bev_segcol_wprp, (rp_lidbev_frame[k][0], rp_lidbev_frame[k][1]), radius=3, color=bev_color, thickness=2)
             lidar_front_segcol_wprp = cv2.circle(lidar_front_segcol_wprp, (rp_lidfront_frame[k][0], rp_lidfront_frame[k][1]), radius=3, color=(255, 255, 255), thickness=2)
 
         for k in range(configx.n_wp):
@@ -215,8 +217,8 @@ for route in route_list:
             (f"Robot Lon: {format(np.round(veh_curr_lon, 6), '.6f')}", ""),
             (f"Rp1 Lat: {format(np.round(rp_list['route_point']['latitude'][0], 6), '.6f')}", ""),
             (f"Rp1 Lon: {format(np.round(rp_list['route_point']['longitude'][0], 6), '.6f')}", ""),
-            (f"Rp2 Lat: {format(np.round(rp_list['route_point']['latitude'][1], 6), '.6f')}", ""),
-            (f"Rp2 Lon: {format(np.round(rp_list['route_point']['longitude'][1], 6), '.6f')}", ""),
+            (f"Rp2 Lat (neon): {format(np.round(rp_list['route_point']['latitude'][1], 6), '.6f')}", ""),
+            (f"Rp2 Lon (neon): {format(np.round(rp_list['route_point']['longitude'][1], 6), '.6f')}", ""),
             ("", ""),
             ("OUTPUT", ""),
         ]

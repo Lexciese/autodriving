@@ -175,9 +175,9 @@ class KarrDataset(Dataset):
                     filename = self.files[future_idx]
                     with open(f"{self.dir_meta}/{filename}.yml", "r") as read_meta_future:
                         meta_future = yaml.safe_load(read_meta_future)
-                    seq_local_x.append(meta_current["local_position_xyz"][0])
-                    seq_local_y.append(meta_current["local_position_xyz"][1])
-                    local_quaternion = meta_current["local_orientation_xyzw"]
+                    seq_local_x.append(meta_future["local_position_xyz"][0])
+                    seq_local_y.append(meta_future["local_position_xyz"][1])
+                    local_quaternion = meta_future["local_orientation_xyzw"]
                     seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
                 self.preload_data["local_x"].append(seq_local_x)
                 self.preload_data["local_y"].append(seq_local_y)
@@ -283,16 +283,18 @@ class KarrDataset(Dataset):
 
 
 if __name__ == "__main__":
-    dataset = KarrDataset()
+    config = GlobalConfig()
+    dataset = KarrDataset(config)
     print(len(dataset))
     subset_dataset = Subset(dataset, list(range(100)))
     dataloader = DataLoader(subset_dataset, batch_size=4, shuffle=False, num_workers=4, drop_last=False)
     print(len(dataloader))
-    # for batch_idx, batch in enumerate(dataloader):
-    #     print(batch_idx)
-    # iterator = iter(dataloader)
-    # first_step = next(iter(iterator))
-    # print(first_step)
+    for batch_idx, batch in enumerate(dataloader):
+        # waypoints = batch['waypoints']
+        print(f"Batch {batch_idx} Waypoints Shape/Structure:")
+        # print(waypoints)
+    iterator = iter(dataloader)
+    first_step = next(iter(iterator))
 
     # for batch in dataloader:
     #     print(batch)

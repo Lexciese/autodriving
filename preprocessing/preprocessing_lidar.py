@@ -96,7 +96,7 @@ class PreprocessingLidar(Preprocessing):
                 pty_ten = pcd_coords[:, 1]
                 ptz_ten = pcd_coords[:, 2]
 
-            self.bev_seg, self.bev_dep, self.front_seg, self.front_dep, self.rear_seg, self.rear_dep = self.gen_bev_front_rear_seg_dep(ptx_ten, pty_ten, ptz_ten, ptseg_ten)
+            self.bev_seg, self.bev_dep, self.front_seg, self.front_dep, self.rear_seg, self.rear_dep = self.gen_bev_front_rear_seg_dep(ptx_ten, pty_ten, ptz_ten, ptseg_ten, gpu=self.config.use_gpu)
 
             self.bev_segcol = colorize_seg(self.bev_seg.cpu().detach().numpy(), self.config.SEG_CLASSES['colors'])
             self.bev_depcol = colorize_logdepth(self.bev_dep.cpu().detach().numpy())

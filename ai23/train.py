@@ -93,6 +93,7 @@ def train(data_loader, model, config: GlobalConfig, writer, cur_epoch, optimizer
         pred_wp = model(bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, gt_velocity)
 
         # compute loss
+        print("wp: ", gt_waypoints)
         loss_wp = F.l1_loss(pred_wp, gt_waypoints)
         total_loss = params_lw[0] * loss_wp
 
@@ -245,6 +246,7 @@ def main():
     # train: 80%, validation: 10%, test: 10%
     train_len = int(0.8 * total_len)
     val_len = int(0.1 * total_len)
+    test_len = total_len - train_len - val_len
 
     train_indices = list(range(0, train_len))
     val_indices = list(range(train_len, train_len + val_len))
@@ -258,7 +260,7 @@ def main():
     dataloader_train = DataLoader(train_set, batch_size=config.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=drop_last)
     dataloader_val = DataLoader(val_set, batch_size=config.batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
-    print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {len(test_set)}")
+    print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {test_len}")
 
     if not os.path.exists(config.logdir + "/trainval_log.csv"):
         print('TRAIN from the beginning!!!!!!!!!!!!!!!!')

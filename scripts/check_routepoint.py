@@ -100,4 +100,4 @@ def plot_yaml_route(file_path: str | Path, output_html: str = "route_plot.html")
 
 
 # Usage example:
-plot_yaml_route("/media/mf/SATA4TB/autodriving/datasetx/2026-09-12_route00/2026-09-12_route00_routepoint_list_old_math.yml", output_html="2026-09-12_route00_routepoint_list_old_math")
+plot_yaml_route("/media/mf/SATA4TB/autodriving/datasetx/2026-09-12_route00/2026-09-12_route00_routepoint_list_hampel_w3.yml", output_html="2026-09-12_route00_routepoint_list_hampel_w3.html")

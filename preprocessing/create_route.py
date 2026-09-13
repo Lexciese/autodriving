@@ -10,6 +10,17 @@ configx = GlobalConfig()
 
 from preprocessing.data_util import euler_from_quaternion, latlon_to_yaw, quaternion_to_yaw
 
+def hampel_filter(data, window_size=3, n_sigmas=3.0):
+    s = pd.Series(data)
+    rolling_median = s.rolling(window=window_size, min_periods=1, center=True).median()
+    rolling_mad = (s - rolling_median).abs().rolling(window=window_size, min_periods=1, center=True).median()
+    threshold = n_sigmas * 1.4826 * rolling_mad
+    difference = (s - rolling_median).abs()
+    outliers = difference > threshold
+    s_filtered = s.copy()
+    s_filtered[outliers] = rolling_median[outliers]
+    return s_filtered.tolist()
+
 #persoalan QT plugins baca: https://github.com/NVlabs/instant-ngp/discussions/300
 
 #loop pada semua route
@@ -32,6 +43,16 @@ for route in route_list:
 
     meta = [yaml.safe_load(open(ddir_meta+meta_file, "r")) for meta_file in file_list]
     #print(meta)
+
+    # Moving Average Filter to remove GNSS outliers from metadata list
+    gnss_window_size = 3
+    raw_lats = [m['global_position_latlon'][0] for m in meta]
+    raw_lons = [m['global_position_latlon'][1] for m in meta]
+    filtered_lats = hampel_filter(raw_lats, window_size=gnss_window_size)
+    filtered_lons = hampel_filter(raw_lons, window_size=gnss_window_size)
+
+    for idx, m in enumerate(meta):
+        m['global_position_latlon'] = [filtered_lats[idx], filtered_lons[idx]]
 
     jarak_frame = 25
     lat = [m['global_position_latlon'][0] for m in meta][::jarak_frame]
@@ -80,6 +101,10 @@ for route in route_list:
         last_filex = yaml.safe_load(last_filexx)
     sin_angle_buff = deque()
 
+    # Apply MAF for initial route position markers
+    first_filex['global_position_latlon'] = [filtered_lats[0], filtered_lons[0]]
+    last_filex['global_position_latlon'] = [filtered_lats[-1], filtered_lons[-1]]
+
     global_orientation_r, global_orientation_p, global_orientation_y = euler_from_quaternion(w=first_filex['global_orientation_xyzw'][3], x=first_filex['global_orientation_xyzw'][0], y=first_filex['global_orientation_xyzw'][1], z=first_filex['global_orientation_xyzw'][2], rad=False)
     global_orientation_rpy = [global_orientation_r, global_orientation_p, global_orientation_y]
 
@@ -118,6 +143,9 @@ for route in route_list:
 
         with open(ddir_meta+file_name, 'r') as curr_metafile:
             curr_meta = yaml.safe_load(curr_metafile)
+
+        # Apply smoothed GNSS coordinates
+        curr_meta['global_position_latlon'] = [filtered_lats[i], filtered_lons[i]]
 
         #ROUTE BERDASARKAN JARAK SESUNGGUHNYA, DIHITUNG DARI LATITUDE LONGITUDE
         #hitung jarak dalam local coordinate, relatif ke prev_latlon

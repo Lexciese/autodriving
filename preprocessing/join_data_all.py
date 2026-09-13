@@ -272,7 +272,8 @@ for route in route_list:
                 (final_img.shape[1], final_img.shape[0])
             )
 
-        cv2.imwrite(join_img_folder+filenum+".png", final_img)
+        # cv2.imwrite(join_img_folder+filenum+".png", final_img)
+        cv2.imwrite(join_img_folder+filenum+".jpg", final_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
         out_video.write(np.uint8(final_img))
 
     if out_video is not None:

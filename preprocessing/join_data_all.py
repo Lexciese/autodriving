@@ -36,7 +36,7 @@ for route in route_list:
     os.makedirs(join_img_folder, exist_ok=True)
     
     # Load route points
-    with open(configx.datadir + route + "/" + route + "_routepoint_list.yml", 'r') as rp_listx:
+    with open(configx.datadir + route + "/" + route + "_routepoint_list_hampel_w3.yml", 'r') as rp_listx:
         rp_list = yaml.safe_load(rp_listx)
         rp_list['route_point']['latitude'].append(rp_list['last_point']['latitude'])
         rp_list['route_point']['longitude'].append(rp_list['last_point']['longitude'])
@@ -271,6 +271,7 @@ for route in route_list:
                 (final_img.shape[1], final_img.shape[0])
             )
 
+        cv2.imwrite(join_img_folder+filenum+".png", final_img)
         out_video.write(np.uint8(final_img))
 
     if out_video is not None:

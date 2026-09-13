@@ -523,50 +523,6 @@ def pid_control(waypoints, linear_velo_ms, turn_controller, speed_controller):
 
         return pid_steering, pid_throttle, brake
 
-
-class YawEstimator:
-    def __init__(self, min_distance_meters=1.5, window_size=5, alpha=0.3):
-        """
-        min_distance_meters: Minimum displacement required before computing new yaw (filters jitter).
-        window_size: History length for moving average window.
-        alpha: Smoothing factor for Exponential Moving Average (EMA). Range: (0, 1].
-        """
-        self.min_dist = min_distance_meters
-        self.history = deque(maxlen=window_size)
-        self.last_valid_yaw = None
-        self.alpha = alpha
-
-    def latlon_to_yaw(self, lat, lon, lat0, lon0, offset=0.0):
-        # 1. Compute physical distance displacement (Equirectangular approximation)
-        dlat_m = (lat - lat0) * 111133.0
-        dlon_m = (lon - lon0) * 111319.5 * np.cos(np.radians((lat + lat0) / 2.0))
-        dist = np.sqrt(dlat_m**2 + dlon_m**2)
-
-        # 2. If displacement is below threshold, retain previous valid yaw (prevents jitter explosion)
-        if dist < self.min_dist:
-            return self.last_valid_yaw if self.last_valid_yaw is not None else 0.0
-
-        # 3. Calculate raw yaw from forward azimuth
-        lat_rad, lon_rad, lat0_rad, lon0_rad = map(np.radians, [lat, lon, lat0, lon0])
-        dlon = lon_rad - lon0_rad
-        x = np.sin(dlon) * np.cos(lat_rad)
-        y = np.cos(lat0_rad) * np.sin(lat_rad) - np.sin(lat0_rad) * np.cos(lat_rad) * np.cos(dlon)
-
-        raw_yaw = np.arctan2(-x, y)
-        raw_yaw = ((raw_yaw + offset) + np.pi) % (2 * np.pi) - np.pi
-
-        # 4. Circular Exponential Moving Average (EMA) to avoid angle wrap-around issues (-pi to pi)
-        if self.last_valid_yaw is None:
-            smoothed_yaw = raw_yaw
-        else:
-            # Use sin/cos averaging to safely handle angular continuity around pi / -pi
-            sin_avg = (1 - self.alpha) * np.sin(self.last_valid_yaw) + self.alpha * np.sin(raw_yaw)
-            cos_avg = (1 - self.alpha) * np.cos(self.last_valid_yaw) + self.alpha * np.cos(raw_yaw)
-            smoothed_yaw = np.arctan2(sin_avg, cos_avg)
-
-        self.last_valid_yaw = smoothed_yaw
-        return smoothed_yaw
-
 def latlon_to_yaw(lat, lon, lat0, lon0, offset=0.0):
     lat, lon, lat0, lon0 = map(np.radians, [lat, lon, lat0, lon0])
     dlon = lon - lon0

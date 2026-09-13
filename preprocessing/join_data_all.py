@@ -4,10 +4,8 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import yaml
 
-from preprocessing.data_util import resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, YawEstimator, latlon_to_yaw, euler_from_quaternion
+from preprocessing.data_util import resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, latlon_to_yaw, euler_from_quaternion
 from preprocessing.data_util import PIDController, pid_control
-
-yaw_estimator = YawEstimator(min_distance_meters=1.5, alpha=0.3)
 
 # PID Controller
 turn_controller = PIDController(K_P=0.5, K_I=0.25, K_D=0.15, n=15)
@@ -69,7 +67,7 @@ for route in route_list:
 
         if np.sqrt(dLat_m**2 + dLon_m**2) > 1.0:
             bearing_est = "GNSS"
-            bearing_veh = yaw_estimator.latlon_to_yaw(veh_curr_lat, veh_curr_lon, veh_prev_lat, veh_prev_lon)
+            bearing_veh = latlon_to_yaw(veh_curr_lat, veh_curr_lon, veh_prev_lat, veh_prev_lon)
             bearing_veh = np.radians(bearing_veh_deg)
         else:
             bearing_est = "IMU"

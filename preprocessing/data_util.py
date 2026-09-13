@@ -75,16 +75,16 @@ def euler_from_quaternion(w, x, y, z, rad=True): #urutannya q0, q1, q2, q3
     t0 = +2.0 * (w * x + y * z)
     t1 = +1.0 - 2.0 * (x * x + y * y)
     roll_x = np.arctan2(t0, t1)
-    
+
     t2 = +2.0 * (w * y - z * x)
     t2 = +1.0 if t2 > +1.0 else t2
     t2 = -1.0 if t2 < -1.0 else t2
     pitch_y = np.arcsin(t2)
-    
+
     t3 = +2.0 * (w * z + x * y)
     t4 = +1.0 - 2.0 * (y * y + z * z)
     yaw_z = np.arctan2(t3, t4)
-    
+
     if rad:
         return roll_x, pitch_y, yaw_z # in radians
     else:
@@ -116,10 +116,10 @@ def gen_bev_front_rear_seg_dep(self: GlobalConfig, ptx, pty, ptz, ptseg):
     pty = pty.ravel()
     ptz = ptz.ravel()
     ptz_bev = ptz - self.lid_cover_area_rf[0]
-    d_lidar = torch.sqrt(ptx**2 + pty**2 + ptz**2) #jarak relatif # 
+    d_lidar = torch.sqrt(ptx**2 + pty**2 + ptz**2) #jarak relatif #
     ptseg = ptseg.ravel()
     ptn = torch.ravel(torch.tensor([[n for _ in range(len(ptseg))] for n in range(self.bs)])).to(self.gpu_device, dtype=self.dtype) #dummy batch
-    
+
     #check shape
     # print(ptn.shape)
     # print(ptseg.shape)
@@ -223,8 +223,8 @@ def gen_bev_front_rear_seg_dep(self: GlobalConfig, ptx, pty, ptz, ptseg):
     # front_dep = front_dep / (self.dep_max - self.dep_min)
     # print(front_dep)
 
-    
-    
+
+
     #cari index interest untuk rear
     rear_boolx = torch.logical_and(rear_x_img <= self.lidfront_w-1, rear_x_img >= 0)
     rear_bool_all = torch.logical_and(rear_boolx, torch.logical_and(y_img <= self.lidfront_h-1, y_img >= 0))
@@ -255,7 +255,7 @@ def gen_top_view_sdc(pt_cloud_x, pt_cloud_z, semseg, configx: GlobalConfig):
     # cloud_data_x = torch.ravel(depth_in * self.x_matrix)
     # cloud_data_z = torch.ravel(depth_in)
     # cloud_data_cls = torch.ravel(label_img)
-    
+
     #normalize ke frame  #pakai depth point_cloud
     cloud_data_x = torch.round((pt_cloud_x + configx.cam_cover_area_lr) * (semseg.shape[3]-1) / (2*configx.cam_cover_area_lr)).ravel()
     cloud_data_z = torch.round((pt_cloud_z * (1-semseg.shape[2]) / (configx.cam_cover_area_rf[1]-configx.cam_cover_area_rf[0])) + (semseg.shape[2]-1)).ravel()
@@ -274,7 +274,7 @@ def gen_top_view_sdc(pt_cloud_x, pt_cloud_z, semseg, configx: GlobalConfig):
     coor_clsn = torch.unique(coorx[:, idx_xz], dim=1).long() #tensor harus long supaya bisa digunakan sebagai index
     # coor_clsn = torch.stack([self.cloud_data_n[idx_xz], cloud_data_cls[idx_xz], cloud_data_z[idx_xz], cloud_data_x[idx_xz]])
     # coor_clsn = torch.unique(coor_clsn, dim=1).type(torch.long) #tensor harus long supaya bisa digunakan sebagai index
-    # top_view_sc = torch.zeros((depth.shape[0], self.n_class_kitti, self.h, self.w)).float().to(configx.gpu_device)   
+    # top_view_sc = torch.zeros((depth.shape[0], self.n_class_kitti, self.h, self.w)).float().to(configx.gpu_device)
     top_view_sc = torch.zeros_like(semseg) #ini lebih cepat karena secara otomatis size, tipe data, dan device sama dengan yang dimiliki inputnya (semseg)
     top_view_sc[coor_clsn[0], coor_clsn[1], coor_clsn[2], coor_clsn[3]] = 1.0 #format axis dari NCHW
     # for j in range(coor_clsn.shape[1]):
@@ -309,12 +309,12 @@ def colorize_seg(sem_map, colmap):
 
 def colorize_logdepth(depth_map):
     #inputnya sudah 0 - 1
-    norm_dep = depth_map[0][0] 
+    norm_dep = depth_map[0][0]
     #dijadikan 1 - 0
     # norm_dep = -1*norm_dep + 1
 
     # logdepth = np.ones(norm_dep.shape) + (np.log(norm_dep) / 5.70378)
-    # logdepth = np.clip(logdepth, 0.0, 1.0) 
+    # logdepth = np.clip(logdepth, 0.0, 1.0)
     logdepth = np.repeat(norm_dep[:, :, np.newaxis], 3, axis=2) * 255 #normalisasi ke 0 - 255
     return logdepth
 
@@ -329,7 +329,7 @@ def colorize_depthlog(depth_map):
     norm_dep = (norm_dep - 1) * -1 #dibalik terjauh 0, terdekat 1
 
     logdepth = np.ones(norm_dep.shape) + (np.log(norm_dep) / 5.70378)
-    logdepth = np.clip(logdepth, 0.0, 1.0) 
+    logdepth = np.clip(logdepth, 0.0, 1.0)
     visdep = np.repeat(logdepth[:, :, np.newaxis], 3, axis=2) * 255 #normalisasi ke 0 - 255
     return visdep
 
@@ -364,7 +364,7 @@ def transform_2d_points(xyz, r1, t1_x, t1_y, r2, t2_x, t2_y):
     world_to_r2 = np.linalg.inv(r2_to_world)
 
     out = np.asarray(world_to_r2 @ world).T
-    
+
     # reset z-coordinate
     out[:,2] = xyz[:,2]
 
@@ -485,7 +485,7 @@ class PIDController(object):
         self._window = deque([0 for _ in range(n)], maxlen=n)
         self._max = 0.0
         self._min = 0.0
-    
+
     def step(self, error):
         self._window.append(error)
         self._max = max(self._max, abs(error))
@@ -523,6 +523,49 @@ def pid_control(waypoints, linear_velo_ms, turn_controller, speed_controller):
 
         return pid_steering, pid_throttle, brake
 
+
+class YawEstimator:
+    def __init__(self, min_distance_meters=1.5, window_size=5, alpha=0.3):
+        """
+        min_distance_meters: Minimum displacement required before computing new yaw (filters jitter).
+        window_size: History length for moving average window.
+        alpha: Smoothing factor for Exponential Moving Average (EMA). Range: (0, 1].
+        """
+        self.min_dist = min_distance_meters
+        self.history = deque(maxlen=window_size)
+        self.last_valid_yaw = None
+        self.alpha = alpha
+
+    def latlon_to_yaw(self, lat, lon, lat0, lon0, offset=0.0):
+        # 1. Compute physical distance displacement (Equirectangular approximation)
+        dlat_m = (lat - lat0) * 111133.0
+        dlon_m = (lon - lon0) * 111319.5 * np.cos(np.radians((lat + lat0) / 2.0))
+        dist = np.sqrt(dlat_m**2 + dlon_m**2)
+
+        # 2. If displacement is below threshold, retain previous valid yaw (prevents jitter explosion)
+        if dist < self.min_dist:
+            return self.last_valid_yaw if self.last_valid_yaw is not None else 0.0
+
+        # 3. Calculate raw yaw from forward azimuth
+        lat_rad, lon_rad, lat0_rad, lon0_rad = map(np.radians, [lat, lon, lat0, lon0])
+        dlon = lon_rad - lon0_rad
+        x = np.sin(dlon) * np.cos(lat_rad)
+        y = np.cos(lat0_rad) * np.sin(lat_rad) - np.sin(lat0_rad) * np.cos(lat_rad) * np.cos(dlon)
+
+        raw_yaw = np.arctan2(-x, y)
+        raw_yaw = ((raw_yaw + offset) + np.pi) % (2 * np.pi) - np.pi
+
+        # 4. Circular Exponential Moving Average (EMA) to avoid angle wrap-around issues (-pi to pi)
+        if self.last_valid_yaw is None:
+            smoothed_yaw = raw_yaw
+        else:
+            # Use sin/cos averaging to safely handle angular continuity around pi / -pi
+            sin_avg = (1 - self.alpha) * np.sin(self.last_valid_yaw) + self.alpha * np.sin(raw_yaw)
+            cos_avg = (1 - self.alpha) * np.cos(self.last_valid_yaw) + self.alpha * np.cos(raw_yaw)
+            smoothed_yaw = np.arctan2(sin_avg, cos_avg)
+
+        self.last_valid_yaw = smoothed_yaw
+        return smoothed_yaw
 
 def latlon_to_yaw(lat, lon, lat0, lon0, offset=0.0):
     lat, lon, lat0, lon0 = map(np.radians, [lat, lon, lat0, lon0])

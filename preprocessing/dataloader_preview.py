@@ -10,6 +10,39 @@ from preprocessing.data_util import plot_sdc_rpwp, plot_lidbev_rpwp, plot_lidfro
 from ai23.dataloader import KarrDataset
 
 
+def colorize_seg(sem_map, colmap):
+    """
+    Colorize multi-channel semantic segmentation map (B, C, H, W) or (C, H, W).
+    Returns RGB image (H, W, 3).
+    """
+    if sem_map.ndim == 3:
+        sem_map = np.expand_dims(sem_map, axis=0)  # Convert to (1, C, H, W)
+
+    sem_img = np.zeros((sem_map.shape[2], sem_map.shape[3], 3), dtype=np.uint8)
+    idx = np.argmax(sem_map[0], axis=0)
+
+    for cmap in colmap:
+        cmap_id = colmap.index(cmap)
+        sem_img[np.where(idx == cmap_id)] = cmap
+
+    return sem_img
+
+
+def colorize_logdepth(depth_map):
+    """
+    Colorize normalized single-channel depth map (B, C, H, W) or (C, H, W).
+    Returns RGB image (H, W, 3).
+    """
+    if depth_map.ndim == 2:
+        depth_map = np.expand_dims(depth_map, axis=(0, 1))
+    elif depth_map.ndim == 3:
+        depth_map = np.expand_dims(depth_map, axis=0)
+
+    norm_dep = depth_map[0][0]
+    logdepth = np.repeat(norm_dep[:, :, np.newaxis], 3, axis=2) * 255.0
+    return np.uint8(np.clip(logdepth, 0, 255))
+
+
 def visualize_dataset_sample(dataset: KarrDataset, index: int, output_path: str = "sample_output.jpg"):
     configx = dataset.config
     sample = dataset[index]
@@ -39,35 +72,19 @@ def visualize_dataset_sample(dataset: KarrDataset, index: int, output_path: str 
         front_seg = front_seg.cpu().numpy()
         front_dep = front_dep.cpu().numpy()
 
-    if bev_seg.ndim == 3:
-        if bev_seg.shape[0] < bev_seg.shape[1] and bev_seg.shape[0] < bev_seg.shape[2]:
-            bev_seg = np.argmax(bev_seg, axis=0) if bev_seg.shape[0] > 1 else bev_seg[0]
-        elif bev_seg.shape[2] > 4:
-            bev_seg = np.argmax(bev_seg, axis=2)
 
-    if bev_dep.ndim == 3:
-        if bev_dep.shape[0] in [1, 3]:
-            bev_dep = bev_dep[0] if bev_dep.shape[0] == 1 else np.transpose(bev_dep, (1, 2, 0))
+    colmap = config.SEG_CLASSES['colors']
+    # Colorize segmentation and depth maps using custom functions
+    lidar_bev_segcol = colorize_seg(bev_seg, colmap)
+    lidar_bev_depcol = colorize_logdepth(bev_dep)
+    lidar_front_segcol = colorize_seg(front_seg, colmap)
+    lidar_front_depcol = colorize_logdepth(front_dep)
 
-    if front_seg.ndim == 3:
-        if front_seg.shape[0] < front_seg.shape[1] and front_seg.shape[0] < front_seg.shape[2]:
-            front_seg = np.argmax(front_seg, axis=0) if front_seg.shape[0] > 1 else front_seg[0]
-        elif front_seg.shape[2] > 4:
-            front_seg = np.argmax(front_seg, axis=2)
-
-    if front_dep.ndim == 3:
-        if front_dep.shape[0] in [1, 3]:
-            front_dep = front_dep[0] if front_dep.shape[0] == 1 else np.transpose(front_dep, (1, 2, 0))
-
-    bev_seg_u8 = np.uint8(bev_seg / bev_seg.max() * 255.0) if bev_seg.max() > 1 else np.uint8(bev_seg * 255)
-    bev_dep_u8 = np.uint8(bev_dep)
-    front_seg_u8 = np.uint8(front_seg / front_seg.max() * 255.0) if front_seg.max() > 1 else np.uint8(front_seg * 255)
-    front_dep_u8 = np.uint8(front_dep)
-
-    lidar_bev_segcol = cv2.cvtColor(bev_seg_u8, cv2.COLOR_GRAY2BGR) if bev_seg_u8.ndim == 2 else bev_seg_u8[:, :, :3]
-    lidar_bev_depcol = cv2.cvtColor(bev_dep_u8, cv2.COLOR_GRAY2BGR) if bev_dep_u8.ndim == 2 else bev_dep_u8[:, :, :3]
-    lidar_front_segcol = cv2.cvtColor(front_seg_u8, cv2.COLOR_GRAY2BGR) if front_seg_u8.ndim == 2 else front_seg_u8[:, :, :3]
-    lidar_front_depcol = cv2.cvtColor(front_dep_u8, cv2.COLOR_GRAY2BGR) if front_dep_u8.ndim == 2 else front_dep_u8[:, :, :3]
+    # Convert RGB colorized images to OpenCV BGR format
+    lidar_bev_segcol = cv2.cvtColor(lidar_bev_segcol, cv2.COLOR_RGB2BGR)
+    lidar_bev_depcol = cv2.cvtColor(lidar_bev_depcol, cv2.COLOR_RGB2BGR)
+    lidar_front_segcol = cv2.cvtColor(lidar_front_segcol, cv2.COLOR_RGB2BGR)
+    lidar_front_depcol = cv2.cvtColor(lidar_front_depcol, cv2.COLOR_RGB2BGR)
 
     rgb_front = cv2.imread(dataset.rgb[index][-1])
 

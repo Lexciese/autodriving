@@ -62,7 +62,7 @@ class GlobalConfig:
     seq_len = 1  # number of input frames
     pred_len = 3  # future waypoints predicted
     n_wp = pred_len  # waypoints
-    wp_gap = int(hz*5)  # frames between waypoints
+    wp_gap = int(1*5)  # frames between waypoints
     gap_bearing = wp_gap  # frames used for bearing estimation
 
     # Training

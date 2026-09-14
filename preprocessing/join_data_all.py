@@ -68,7 +68,7 @@ for route in route_list:
         if np.sqrt(dLat_m**2 + dLon_m**2) > 1.0:
             bearing_est = "GNSS"
             bearing_veh = latlon_to_yaw(veh_curr_lat, veh_curr_lon, veh_prev_lat, veh_prev_lon)
-            bearing_veh = np.radians(bearing_veh_deg)
+            bearing_veh = np.radians(bearing_veh)
         else:
             bearing_est = "IMU"
             q = curr_meta['global_orientation_xyzw']

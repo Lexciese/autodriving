@@ -218,13 +218,14 @@ if __name__ == "__main__":
     dataset = KarrDataset(config)
 
     MODE = "video"  # "single" "video"
+    index = 554
 
     if MODE == "single":
         visualize_dataset(
             dataset=dataset,
             mode="single",
-            index=1005,
-            output_path="sample_1005.jpg"
+            index=index,
+            output_path=f"sample_{index}.jpg"
         )
     elif MODE == "video":
         visualize_dataset(

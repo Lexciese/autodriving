@@ -79,11 +79,11 @@ class KarrDataset(Dataset):
             self.files = [os.path.splitext(filename)[0] for filename in self.files] # remove extension string
             self.len_files = len(self.files)
 
-            history_buff = max(3, self.seq_len)
+            history_buff = max(7, self.seq_len, self.config.gap_bearing + 1)
             latlon_buffer = {
                 'lat_buf': deque(maxlen=history_buff),
                 'lon_buf': deque(maxlen=history_buff),
-                'window_size': 3
+                'window_size': 7
             }
             bearing_buffer = {
                 'sin': deque(maxlen=5),
@@ -127,20 +127,26 @@ class KarrDataset(Dataset):
                 seq_local_y.append(meta_current["local_position_xyz"][1])
                 local_quaternion = meta_current["local_orientation_xyzw"]
                 seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
-                curr_lat = meta_current["global_position_latlon"][0]
-                curr_lon = meta_current["global_position_latlon"][1]
+                raw_curr_lat = meta_current["global_position_latlon"][0]
+                raw_curr_lon = meta_current["global_position_latlon"][1]
                 velocity = np.abs(meta_current["velocity"])
 
-                curr_lat, curr_lon, is_outlier = hampel_filter(curr_lat, curr_lon, latlon_buffer, n_sigmas=3.0)
+                curr_lat, curr_lon, is_outlier = hampel_filter(raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0)
                 # handling the prev latlon
-                if len(latlon_buffer['lat_buf']) >= self.seq_len:
-                    prev_offset = -self.seq_len
+                prev_offset = -(1 + self.config.gap_bearing)
+                if len(latlon_buffer['lat_buf']) >= abs(prev_offset):
                     prev_lat = latlon_buffer['lat_buf'][prev_offset]
                     prev_lon = latlon_buffer['lon_buf'][prev_offset]
                 else:
-                    prev_lat = meta_current["global_position_latlon"][0]
-                    prev_lon = meta_current["global_position_latlon"][1]
-
+                    prev_idx = current_idx - self.config.gap_bearing
+                    prev_idx = max(0, prev_idx) 
+                    
+                    prev_filename = self.files[prev_idx]
+                    with open(f"{self.dir_meta}/{prev_filename}.yml", "r") as read_meta_prev:
+                        meta_prev = yaml.safe_load(read_meta_prev)
+                    prev_lat = meta_prev["global_position_latlon"][0]
+                    prev_lon = meta_prev["global_position_latlon"][1]
+                
                 if velocity > 0.5:
                     bearing = latlon_to_yaw(
                         curr_lat, curr_lon, prev_lat, prev_lon,
@@ -167,8 +173,8 @@ class KarrDataset(Dataset):
                 for j in range(2):
                     next_lat_rp = rp_list["route_point"]["latitude"][j]
                     next_lon_rp = rp_list["route_point"]["longitude"][j]
-                    dLat_m = (next_lat_rp - meta_current["global_position_latlon"][0]) * 40008000 / 360
-                    dLon_m = (next_lon_rp - meta_current['global_position_latlon'][1]) * 40075000 * np.cos(np.radians(meta_current['global_position_latlon'][0])) / 360
+                    dLat_m = (next_lat_rp - curr_lat) * 40008000 / 360
+                    dLon_m = (next_lon_rp - curr_lon) * 40075000 * np.cos(np.radians(curr_lat)) / 360
                     if j == 0 and np.sqrt(dLat_m**2 + dLon_m**2) <= self.rp1_close and not about_to_finish:
                         if len(rp_list['route_point']['latitude']) > 2:
                             rp_list['route_point']['latitude'].pop(0)

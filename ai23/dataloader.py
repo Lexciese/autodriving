@@ -8,7 +8,8 @@ from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from ai23.utility.utility import latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
+from ai23.utility import latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
+from ai23.utility import hampel_filter, bearing_filter
 from ai23.config import GlobalConfig
 from preprocessing.preprocessing_lidar import PreprocessingLidar
 
@@ -78,6 +79,16 @@ class KarrDataset(Dataset):
             self.files = [os.path.splitext(filename)[0] for filename in self.files] # remove extension string
             self.len_files = len(self.files)
 
+            latlon_buffer = {
+                'lat_buf': deque(maxlen=3),
+                'lon_buf': deque(maxlen=3),
+                'window_size': 3
+            }
+            bearing_buffer = {
+                'sin': deque(maxlen=5),
+                'cos': deque(maxlen=5)
+            }
+
             with open(path / f"{route}_routepoint_list.yml", "r") as rp_listx:
                 rp_list = yaml.safe_load(rp_listx)
                 #assign end point sebagai route terakhir
@@ -90,9 +101,9 @@ class KarrDataset(Dataset):
             prev_lat = _meta_init["global_position_latlon"][0]
             prev_lon = _meta_init["global_position_latlon"][1]
 
-            # Past: [current_idx - seq_len + 1, current_idx]
-            # Current: self.files[current_idx]
-            # Future: current_idx + data_rate, current_idx + 2*data_rate,
+            # Past: [current_idx - seq_len + 1, current_idx]                -> rgb, raw_pcd, seg_pcd
+            # Current: self.files[current_idx]                              -> local position & heading, latlon, velocity
+            # Future: current_idx + data_rate, current_idx + 2*data_rate    -> local position & heading
             for current_idx in range((self.seq_len - 1), (self.len_files - self.pred_len * self.data_rate)):
                 filename = ""
                 seq_rgb = []
@@ -123,30 +134,43 @@ class KarrDataset(Dataset):
                 seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
                 curr_lat = meta_current["global_position_latlon"][0]
                 curr_lon = meta_current["global_position_latlon"][1]
-                self.preload_data["lat"].append(curr_lat)
-                self.preload_data["lon"].append(curr_lon)
                 velocity = np.abs(meta_current["velocity"])
-                self.preload_data["velocity"].append(velocity)
+
+                curr_lat, curr_lon, is_outlier = hampel_filter(curr_lat, curr_lon, latlon_buffer, n_sigmas=3.0)
+                # handling the prev latlon
+                if len(latlon_buffer['lat_buf']) >= abs(self.seq_len - 2):
+                    prev_offset = -(self.seq_len - 2)
+                    prev_lat = latlon_buffer['lat_buf'][prev_offset]
+                    prev_lon = latlon_buffer['lon_buf'][prev_offset]
+                else:
+                    _first_current_file = self.files[self.seq_len - 2] if self.seq_len >= 2 else self.files[0]
+                    with open(f"{self.dir_meta}/{_first_current_file}.yml", "r") as _f:
+                        _meta_init = yaml.safe_load(_f)
+                    prev_lat = _meta_init['global_position_latlon'][0]
+                    prev_lon = _meta_init['global_position_latlon'][1]
 
                 if velocity > 0.5:
-                    bearing_latlon = latlon_to_yaw(
+                    bearing = latlon_to_yaw(
                         curr_lat, curr_lon, prev_lat, prev_lon,
                         offset=0.0
-                        )
-                    self.preload_data["bearing"].append(bearing_latlon)
+                    )
                 else:
-                    _, _, bearing_witmotion = euler_from_quaternion(
+                    _, _, bearing = euler_from_quaternion(
                         w=meta_current['global_orientation_xyzw'][3],
                         x=meta_current['global_orientation_xyzw'][0],
                         y=meta_current['global_orientation_xyzw'][1],
                         z=meta_current['global_orientation_xyzw'][2],
                         rad=True
-                        )
-                    bearing_witmotion = np.degrees(bearing_witmotion) - 90
-                    bearing_witmotion = np.radians(bearing_witmotion)
-                    self.preload_data["bearing"].append(bearing_witmotion)
+                    )
+                    bearing = np.degrees(bearing) - 90
+                    bearing = np.radians(bearing)
 
-                prev_lat, prev_lon = curr_lat, curr_lon
+                bearing = bearing_filter(bearing, bearing_buffer)
+
+                self.preload_data["bearing"].append(bearing)
+                self.preload_data["lat"].append(curr_lat)
+                self.preload_data["lon"].append(curr_lon)
+                self.preload_data["velocity"].append(velocity)
 
                 about_to_finish = False
                 for j in range(2):

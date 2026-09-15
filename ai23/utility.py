@@ -24,16 +24,16 @@ def euler_from_quaternion(w, x, y, z, rad=True): #urutannya q0, q1, q2, q3
     t0 = +2.0 * (w * x + y * z)
     t1 = +1.0 - 2.0 * (x * x + y * y)
     roll_x = np.arctan2(t0, t1)
-    
+
     t2 = +2.0 * (w * y - z * x)
     t2 = +1.0 if t2 > +1.0 else t2
     t2 = -1.0 if t2 < -1.0 else t2
     pitch_y = np.arcsin(t2)
-    
+
     t3 = +2.0 * (w * z + x * y)
     t4 = +1.0 - 2.0 * (y * y + z * z)
     yaw_z = np.arctan2(t3, t4)
-    
+
     if rad:
         return roll_x, pitch_y, yaw_z # in radians
     else:
@@ -58,7 +58,7 @@ def transform_2d_points(xyz, r1, t1_x, t1_y, r2, t2_x, t2_y):
     world_to_r2 = np.linalg.inv(r2_to_world)
 
     out = np.asarray(world_to_r2 @ world).T
-    
+
     # reset z-coordinate
     out[:,2] = xyz[:,2]
 
@@ -103,7 +103,7 @@ def resizecrop_matrix(image, WH_resized=[256, 128], D3=True, crop_HW=[128, 256])
     return cropped_im
 
 def crop_matrix(image, resize=1, D3=True, crop=[512, 1024]):
-    
+
     # print(image.shape)
     # upper_left_yx = [int((image.shape[0]/2) - (crop/2)), int((image.shape[1]/2) - (crop/2))]
     upper_left_yx = [int((image.shape[0]/2) - (crop[0]/2)), int((image.shape[1]/2) - (crop[1]/2))]
@@ -149,7 +149,7 @@ def transform_2d_points(xyz, r1, t1_x, t1_y, r2, t2_x, t2_y):
     world_to_r2 = np.linalg.inv(r2_to_world)
 
     out = np.asarray(world_to_r2 @ world).T
-    
+
     # reset z-coordinate
     out[:,2] = xyz[:,2]
 
@@ -213,3 +213,43 @@ def renormalize_params_lw(current_lw, config: GlobalConfig):
     #buat torch float tensor lagi dan masukkan ke cuda memory
     normalized_lws = [torch.cuda.FloatTensor([lw]).clone().detach().requires_grad_(True) for lw in new_lws]
     return normalized_lws
+
+def hampel_filter(lat_pt, lon_pt, latlon_buffer, n_sigmas=3.0):
+        k = 1.4826
+        latlon_buffer['lat_buf'].append(lat_pt)
+        latlon_buffer['lon_buf'].append(lon_pt)
+
+        if len(latlon_buffer['lat_buf']) < latlon_buffer['window_size']:
+            return lat_pt, lon_pt, False
+
+        win_lat = np.array(latlon_buffer['lat_buf'])
+        med_lat = np.median(win_lat)
+        mad_lat = np.median(np.abs(win_lat - med_lat))
+        thresh_lat = k * mad_lat * n_sigmas
+
+        win_lon = np.array(latlon_buffer['lon_buf'])
+        med_lon = np.median(win_lon)
+        mad_lon = np.median(np.abs(win_lon - med_lon))
+        thresh_lon = k * mad_lon * n_sigmas
+
+        curr_lat = latlon_buffer['lat_buf'][-1]
+        curr_lon = latlon_buffer['lon_buf'][-1]
+
+        is_lat_outlier = (thresh_lat > 0) and (np.abs(curr_lat - med_lat) > thresh_lat)
+        is_lon_outlier = (thresh_lon > 0) and (np.abs(curr_lon - med_lon) > thresh_lon)
+
+        if is_lat_outlier or is_lon_outlier:
+            latlon_buffer['lat_buf'][-1] = med_lat
+            latlon_buffer['lon_buf'][-1] = med_lon
+            return med_lat, med_lon, True
+
+        return curr_lat, curr_lon, False
+
+def bearing_filter(raw_bearing_rad, buffer):
+    buffer['sin'].append(np.sin(raw_bearing_rad))
+    buffer['cos'].append(np.cos(raw_bearing_rad))
+
+    avg_sin = np.mean(buffer['sin'])
+    avg_cos = np.mean(buffer['cos'])
+
+    return np.arctan2(avg_sin, avg_cos)

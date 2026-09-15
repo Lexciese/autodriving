@@ -168,15 +168,15 @@ def main():
     model.load_state_dict(torch.load(os.path.join(config.logdir, 'best_model.pth')))
 
     karr_dataset = KarrDataset(config=config)
-    total_len = len(karr_dataset)
+    total_len = len(karr_dataset) - 3161
     # train: 80%, validation: 10%, test: 10%
     train_len = int(0.8 * total_len)
     val_len = int(0.1 * total_len)
     test_len = total_len - train_len - val_len
 
-    train_indices = list(range(0, train_len))
-    val_indices = list(range(train_len, train_len + val_len))
-    test_indices = list(range(train_len + val_len, total_len))
+    train_indices = list(range(3161, train_len+3161))
+    val_indices = list(range(train_len + 3161, train_len + val_len + 3161))
+    test_indices = list(range(train_len + val_len + 3161, total_len + 3161))
     test_set = Subset(karr_dataset, test_indices)
     dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 

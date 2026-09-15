@@ -241,14 +241,15 @@ def main():
     karr_dataset = KarrDataset(config=config)
 
     # Calculate dataset lengths
-    total_len = len(karr_dataset)
+    # start from 3161 for "UGM Baru" Dataset
+    total_len = len(karr_dataset) - 3161
     # train: 80%, validation: 10%, test: 10%
     train_len = int(0.8 * total_len)
     val_len = int(0.1 * total_len)
     test_len = total_len - train_len - val_len
 
-    train_indices = list(range(0, train_len))
-    val_indices = list(range(train_len, train_len + val_len))
+    train_indices = list(range(3161, train_len+3161))
+    val_indices = list(range(train_len + 3161, train_len + val_len + 3161))
 
     train_set = Subset(karr_dataset, train_indices)
     val_set = Subset(karr_dataset, val_indices)

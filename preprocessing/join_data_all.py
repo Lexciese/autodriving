@@ -4,8 +4,10 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import yaml
 
-from preprocessing.data_util import resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, latlon_to_yaw, euler_from_quaternion
+from preprocessing.data_util import hampel_filter, bearing_filter, resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, latlon_to_yaw, euler_from_quaternion
 from preprocessing.data_util import PIDController, pid_control
+
+from collections import deque
 
 # PID Controller
 turn_controller = PIDController(K_P=0.5, K_I=0.25, K_D=0.15, n=15)
@@ -22,6 +24,15 @@ for route in route_list:
         continue
     print(route)
 
+    latlon_buffer = {
+        'lat_buf': deque(maxlen=3),
+        'lon_buf': deque(maxlen=3),
+        'window_size': 3
+    }
+    bearing_buffer = {
+        'sin': deque(maxlen=5),
+        'cos': deque(maxlen=5)
+    }
     # Paths
     ddir_meta = configx.datadir + route + "/meta/"
     ddir_rgb_front = configx.datadir + route + "/camera/rgb/"
@@ -54,27 +65,43 @@ for route in route_list:
         # Global coordinate to local coordinate for next route
         with open(ddir_meta + filenum + ".yml", 'r') as curr_metafile:
             curr_meta = yaml.safe_load(curr_metafile)
-        veh_curr_lat = curr_meta['global_position_latlon'][0]
-        veh_curr_lon = curr_meta['global_position_latlon'][1]
+        velocity = np.abs(curr_meta["velocity"])
+        # veh_curr_lat = curr_meta['global_position_latlon'][0]
+        # veh_curr_lon = curr_meta['global_position_latlon'][1]
 
-        with open(ddir_meta + file_list[i - configx.gap_bearing], 'r') as prev_metafile:
-            prev_meta = yaml.safe_load(prev_metafile)
-        veh_prev_lat = prev_meta['global_position_latlon'][0]
-        veh_prev_lon = prev_meta['global_position_latlon'][1]
+        raw_curr_lat = curr_meta['global_position_latlon'][0]
+        raw_curr_lon = curr_meta['global_position_latlon'][1]
+
+        veh_curr_lat, veh_curr_lon, is_outlier = hampel_filter(
+            raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0
+        )
+
+        prev_offset = -(1 + configx.gap_bearing)
+        if len(latlon_buffer['lat_buf']) >= abs(prev_offset):
+            veh_prev_lat = latlon_buffer['lat_buf'][prev_offset]
+            veh_prev_lon = latlon_buffer['lon_buf'][prev_offset]
+        else:
+            with open(ddir_meta + file_list[i - configx.gap_bearing], 'r') as prev_metafile:
+                prev_meta = yaml.safe_load(prev_metafile)
+            veh_prev_lat = prev_meta['global_position_latlon'][0]
+            veh_prev_lon = prev_meta['global_position_latlon'][1]
 
         dLat_m = (veh_curr_lat - veh_prev_lat) * 40008000 / 360
         dLon_m = (veh_curr_lon - veh_prev_lon) * 40075000 * np.cos(np.radians(veh_curr_lat)) / 360
 
-        if np.sqrt(dLat_m**2 + dLon_m**2) > 1.0:
+        if velocity > 0.5:
             bearing_est = "GNSS"
-            bearing_veh = latlon_to_yaw(veh_curr_lat, veh_curr_lon, veh_prev_lat, veh_prev_lon)
-            bearing_veh = np.radians(bearing_veh)
+            raw_bearing_veh = latlon_to_yaw(
+                    veh_curr_lat, veh_curr_lon,
+                    veh_prev_lat, veh_prev_lon
+            )
         else:
             bearing_est = "IMU"
             q = curr_meta['global_orientation_xyzw']
             w, x, y, z = q[3], q[0], q[1], q[2]
-            bearing_veh = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2)) - 1.5708
+            raw_bearing_veh = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2)) - 1.5708
 
+        bearing_veh = bearing_filter(raw_bearing_veh, bearing_buffer)
         bearing_veh_deg = np.degrees(bearing_veh)
         velocity_ms = curr_meta['velocity']
         velocity = velocity_ms * 3600 / 1000  # Convert to km/h
@@ -92,8 +119,8 @@ for route in route_list:
             next_lon = rp_list['route_point']['longitude'][j]
             dLat_m = (next_lat - veh_curr_lat) * 40008000 / 360
             dLon_m = (next_lon - veh_curr_lon) * 40075000 * np.cos(np.radians(veh_curr_lat)) / 360
-
-            if j == 0 and np.sqrt(dLat_m**2 + dLon_m**2) <= configx.rp1_close and not about_to_finish:
+            dist = np.sqrt(dLat_m**2 + dLon_m**2)
+            if j == 0 and dist <= configx.rp1_close and not about_to_finish:
                 if len(rp_list['route_point']['latitude']) > 2:
                     rp_list['route_point']['latitude'].pop(0)
                     rp_list['route_point']['longitude'].pop(0)
@@ -264,7 +291,7 @@ for route in route_list:
         # Initialize VideoWriter
         if out_video is None:
             out_video = cv2.VideoWriter(
-                configx.datadir + route + '/join_img/' + route + '.avi',
+                configx.datadir + route + '/join_img/' + route + '_hampel_plus_bearing_maf.avi',
                 cv2.VideoWriter_fourcc(*'DIVX'),
                 configx.fps,
                 (final_img.shape[1], final_img.shape[0])

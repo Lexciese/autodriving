@@ -472,7 +472,47 @@ def bearing_biasing(in_angle, bearing_bias):
     return bearing_veh_deg
 
 
+def hampel_filter(lat_pt, lon_pt, state_buffer, n_sigmas=3.0):
+        k = 1.4826
+        state_buffer['lat_buf'].append(lat_pt)
+        state_buffer['lon_buf'].append(lon_pt)
 
+        # If the buffer isn't full yet, accept the initial raw data points
+        if len(state_buffer['lat_buf']) < state_buffer['window_size']:
+            return lat_pt, lon_pt, False
+
+        win_lat = np.array(state_buffer['lat_buf'])
+        med_lat = np.median(win_lat)
+        mad_lat = np.median(np.abs(win_lat - med_lat))
+        thresh_lat = k * mad_lat * n_sigmas
+
+        win_lon = np.array(state_buffer['lon_buf'])
+        med_lon = np.median(win_lon)
+        mad_lon = np.median(np.abs(win_lon - med_lon))
+        thresh_lon = k * mad_lon * n_sigmas
+
+        curr_lat = state_buffer['lat_buf'][-1]
+        curr_lon = state_buffer['lon_buf'][-1]
+
+        is_lat_outlier = (thresh_lat > 0) and (np.abs(curr_lat - med_lat) > thresh_lat)
+        is_lon_outlier = (thresh_lon > 0) and (np.abs(curr_lon - med_lon) > thresh_lon)
+
+        # Impute outlier values with local median so downstream processing doesn't break
+        if is_lat_outlier or is_lon_outlier:
+            state_buffer['lat_buf'][-1] = med_lat
+            state_buffer['lon_buf'][-1] = med_lon
+            return med_lat, med_lon, True
+
+        return curr_lat, curr_lon, False
+
+def bearing_filter(raw_bearing_rad, buffer):
+    buffer['sin'].append(np.sin(raw_bearing_rad))
+    buffer['cos'].append(np.cos(raw_bearing_rad))
+
+    avg_sin = np.mean(buffer['sin'])
+    avg_cos = np.mean(buffer['cos'])
+
+    return np.arctan2(avg_sin, avg_cos)
 
 
 

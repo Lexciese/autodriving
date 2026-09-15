@@ -4,6 +4,8 @@ import numpy as np
 import yaml
 from PIL import Image, ImageDraw, ImageFont
 import torch
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 
 from ai23.config import GlobalConfig
 from preprocessing.data_util import plot_sdc_rpwp, plot_lidbev_rpwp, plot_lidfront_rpwp
@@ -11,10 +13,6 @@ from ai23.dataloader import KarrDataset
 
 
 def colorize_seg(sem_map, colmap):
-    """
-    Colorize multi-channel semantic segmentation map (B, C, H, W) or (C, H, W).
-    Returns RGB image (H, W, 3).
-    """
     if sem_map.ndim == 3:
         sem_map = np.expand_dims(sem_map, axis=0)  # Convert to (1, C, H, W)
 
@@ -29,10 +27,6 @@ def colorize_seg(sem_map, colmap):
 
 
 def colorize_logdepth(depth_map):
-    """
-    Colorize normalized single-channel depth map (B, C, H, W) or (C, H, W).
-    Returns RGB image (H, W, 3).
-    """
     if depth_map.ndim == 2:
         depth_map = np.expand_dims(depth_map, axis=(0, 1))
     elif depth_map.ndim == 3:
@@ -43,7 +37,7 @@ def colorize_logdepth(depth_map):
     return np.uint8(np.clip(logdepth, 0, 255))
 
 
-def visualize_dataset_sample(dataset: KarrDataset, index: int, output_path: str = "sample_output.jpg"):
+def generate_frame(dataset: KarrDataset, index: int) -> np.ndarray:
     configx = dataset.config
     sample = dataset[index]
 
@@ -72,15 +66,12 @@ def visualize_dataset_sample(dataset: KarrDataset, index: int, output_path: str 
         front_seg = front_seg.cpu().numpy()
         front_dep = front_dep.cpu().numpy()
 
-
-    colmap = config.SEG_CLASSES['colors']
-    # Colorize segmentation and depth maps using custom functions
+    colmap = configx.SEG_CLASSES['colors']
     lidar_bev_segcol = colorize_seg(bev_seg, colmap)
     lidar_bev_depcol = colorize_logdepth(bev_dep)
     lidar_front_segcol = colorize_seg(front_seg, colmap)
     lidar_front_depcol = colorize_logdepth(front_dep)
 
-    # Convert RGB colorized images to OpenCV BGR format
     lidar_bev_segcol = cv2.cvtColor(lidar_bev_segcol, cv2.COLOR_RGB2BGR)
     lidar_bev_depcol = cv2.cvtColor(lidar_bev_depcol, cv2.COLOR_RGB2BGR)
     lidar_front_segcol = cv2.cvtColor(lidar_front_segcol, cv2.COLOR_RGB2BGR)
@@ -170,15 +161,77 @@ def visualize_dataset_sample(dataset: KarrDataset, index: int, output_path: str 
     bev_column = cv2.resize(bev_stack_raw, (bev_target_w, total_h), interpolation=cv2.INTER_LINEAR)
 
     final_img = np.concatenate((left_column, bev_column), axis=1)
+    if final_img.shape[1] % 2 != 0:
+        final_img = cv2.resize(final_img, (final_img.shape[1] - 1, final_img.shape[0]))
 
-    # Save to disk
-    cv2.imwrite(output_path, final_img, [cv2.IMWRITE_JPEG_QUALITY, 90])
-    print(f"Sample image successfully generated and saved to {output_path}")
+    return final_img
+
+
+def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0, output_path: str = None, fps: int = 10, max_frames: int = None, num_workers: int = 8):
+    if mode == "single":
+        if output_path is None:
+            output_path = f"sample_shot_idx_{index}.jpg"
+
+        frame = generate_frame(dataset, index)
+        cv2.imwrite(output_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        print(f"[SINGLE MODE] Frame for index {index} saved to: {output_path}")
+
+    elif mode == "video":
+        if output_path is None:
+            output_path = "dataset_visualization.avi"
+
+        total_samples = len(dataset)
+        num_frames = min(total_samples, max_frames) if max_frames else total_samples
+
+        if num_frames == 0:
+            print("Dataset is empty. Skipping video creation.")
+            return
+
+        print(f"[VIDEO MODE] Generating video for {num_frames} frames at {fps} FPS...")
+
+        first_frame = generate_frame(dataset, 0)
+        h, w, _ = first_frame.shape
+
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(generate_frame, dataset, i) for i in range(num_frames)]
+            
+            # Loop through all indices
+            for future in tqdm(futures, desc="Encoding Video"):
+                frame = future.result()
+                if frame.shape[0] != h or frame.shape[1] != w:
+                    frame = cv2.resize(frame, (w, h))
+
+                out.write(frame)
+
+        out.release()
+        print(f"[VIDEO MODE] Video rendered successfully to: {output_path}")
+
+    else:
+        raise ValueError(f"Invalid mode: '{mode}'. Pick either 'single' or 'video'.")
 
 
 if __name__ == "__main__":
     config = GlobalConfig()
     dataset = KarrDataset(config)
 
-    TARGET_INDEX = 1005
-    visualize_dataset_sample(dataset, index=TARGET_INDEX, output_path=f"sample_shot_idx_{TARGET_INDEX}.jpg")
+    MODE = "video"  # "single" "video"
+
+    if MODE == "single":
+        visualize_dataset(
+            dataset=dataset,
+            mode="single",
+            index=1005,
+            output_path="sample_1005.jpg"
+        )
+    elif MODE == "video":
+        visualize_dataset(
+            dataset=dataset,
+            mode="video",
+            fps=10,
+            output_path="full_dataset_preview.avi",
+            max_frames=None,
+            num_workers=8
+        )

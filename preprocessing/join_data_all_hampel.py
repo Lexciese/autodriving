@@ -9,6 +9,15 @@ from preprocessing.data_util import PIDController, pid_control
 
 from collections import deque
 
+def bearing_filter(raw_bearing_rad, buffer):
+    buffer['sin'].append(np.sin(raw_bearing_rad))
+    buffer['cos'].append(np.cos(raw_bearing_rad))
+
+    avg_sin = np.mean(buffer['sin'])
+    avg_cos = np.mean(buffer['cos'])
+
+    return np.arctan2(avg_sin, avg_cos)
+
 def create_hampel_buffer(window_size=3):
     return {
         'lat_buf': deque(maxlen=window_size),
@@ -66,12 +75,9 @@ for route in route_list:
 
     stream_buffer = create_hampel_buffer(window_size=3)
     bearing_buffer = {
-        "curr_lat": deque(maxlen=5),
-        "curr_lon": deque(maxlen=5),
-        "prev_lat": deque(maxlen=5),
-        "prev_lon": deque(maxlen=5)
+        'sin': deque(maxlen=5),
+        'cos': deque(maxlen=5)
     }
-
     # Paths
     ddir_meta = configx.datadir + route + "/meta/"
     ddir_rgb_front = configx.datadir + route + "/camera/rgb/"
@@ -128,23 +134,19 @@ for route in route_list:
         dLat_m = (veh_curr_lat - veh_prev_lat) * 40008000 / 360
         dLon_m = (veh_curr_lon - veh_prev_lon) * 40075000 * np.cos(np.radians(veh_curr_lat)) / 360
 
-
-        bearing_buffer["curr_lat"].append(veh_curr_lat)
-        bearing_buffer["curr_lon"].append(veh_curr_lon)
-        bearing_buffer["prev_lat"].append(veh_prev_lat)
-        bearing_buffer["prev_lon"].append(veh_prev_lon)
         if velocity > 0.5:
             bearing_est = "GNSS"
-            bearing_veh = latlon_to_yaw(np.average(bearing_buffer["curr_lat"]), 
-                                        np.average(bearing_buffer["curr_lon"]), 
-                                        np.average(bearing_buffer["prev_lat"]), 
-                                        np.average(bearing_buffer["prev_lon"]))
+            raw_bearing_veh = latlon_to_yaw(
+                    veh_curr_lat, veh_curr_lon,
+                    veh_prev_lat, veh_prev_lon
+            )
         else:
             bearing_est = "IMU"
             q = curr_meta['global_orientation_xyzw']
             w, x, y, z = q[3], q[0], q[1], q[2]
             bearing_veh = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2)) - 1.5708
 
+        bearing_veh = bearing_filter(raw_bearing_veh, bearing_buffer)
         bearing_veh_deg = np.degrees(bearing_veh)
         velocity_ms = curr_meta['velocity']
         velocity = velocity_ms * 3600 / 1000  # Convert to km/h

@@ -54,7 +54,7 @@ class GlobalConfig:
     hz = 4  # samples recorded per second
     bias_basic = 15
     bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
-    rp1_close = 4  # min distance (m) to advance to the next route point
+    rp1_close = 6  # min distance (m) to advance to the next route point
     route_gap_distance = 6  # in meters
     n_buffer = 0  # moving-average buffer (seconds)
 

@@ -144,7 +144,7 @@ for route in route_list:
             bearing_est = "IMU"
             q = curr_meta['global_orientation_xyzw']
             w, x, y, z = q[3], q[0], q[1], q[2]
-            bearing_veh = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2)) - 1.5708
+            raw_bearing_veh = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2)) - 1.5708
 
         bearing_veh = bearing_filter(raw_bearing_veh, bearing_buffer)
         bearing_veh_deg = np.degrees(bearing_veh)
@@ -336,7 +336,7 @@ for route in route_list:
         # Initialize VideoWriter
         if out_video is None:
             out_video = cv2.VideoWriter(
-                configx.datadir + route + '/join_img/' + route + '_hampel.avi',
+                configx.datadir + route + '/join_img/' + route + '_hampel_plus_bearing_maf.avi',
                 cv2.VideoWriter_fourcc(*'DIVX'),
                 configx.fps,
                 (final_img.shape[1], final_img.shape[0])

@@ -215,35 +215,39 @@ def renormalize_params_lw(current_lw, config: GlobalConfig):
     return normalized_lws
 
 def hampel_filter(lat_pt, lon_pt, latlon_buffer, n_sigmas=3.0):
-        k = 1.4826
-        latlon_buffer['lat_buf'].append(lat_pt)
-        latlon_buffer['lon_buf'].append(lon_pt)
+    k = 1.4826
+    latlon_buffer['lat_buf'].append(lat_pt)
+    latlon_buffer['lon_buf'].append(lon_pt)
 
-        if len(latlon_buffer['lat_buf']) < latlon_buffer['window_size']:
-            return lat_pt, lon_pt, False
+    if len(latlon_buffer['lat_buf']) < 3:
+        return lat_pt, lon_pt, False
 
-        win_lat = np.array(latlon_buffer['lat_buf'])
-        med_lat = np.median(win_lat)
-        mad_lat = np.median(np.abs(win_lat - med_lat))
-        thresh_lat = k * mad_lat * n_sigmas
+    win_lat = np.array(latlon_buffer['lat_buf'])
+    med_lat = np.median(win_lat)
+    mad_lat = np.median(np.abs(win_lat - med_lat))
+    thresh_lat = k * mad_lat * n_sigmas
 
-        win_lon = np.array(latlon_buffer['lon_buf'])
-        med_lon = np.median(win_lon)
-        mad_lon = np.median(np.abs(win_lon - med_lon))
-        thresh_lon = k * mad_lon * n_sigmas
+    win_lon = np.array(latlon_buffer['lon_buf'])
+    med_lon = np.median(win_lon)
+    mad_lon = np.median(np.abs(win_lon - med_lon))
+    thresh_lon = k * mad_lon * n_sigmas
 
-        curr_lat = latlon_buffer['lat_buf'][-1]
-        curr_lon = latlon_buffer['lon_buf'][-1]
+    curr_lat = latlon_buffer['lat_buf'][-1]
+    curr_lon = latlon_buffer['lon_buf'][-1]
 
-        is_lat_outlier = (thresh_lat > 0) and (np.abs(curr_lat - med_lat) > thresh_lat)
-        is_lon_outlier = (thresh_lon > 0) and (np.abs(curr_lon - med_lon) > thresh_lon)
+    is_lat_outlier = (thresh_lat > 0) and (np.abs(curr_lat - med_lat) > thresh_lat)
+    is_lon_outlier = (thresh_lon > 0) and (np.abs(curr_lon - med_lon) > thresh_lon)
 
-        if is_lat_outlier or is_lon_outlier:
-            latlon_buffer['lat_buf'][-1] = med_lat
-            latlon_buffer['lon_buf'][-1] = med_lon
-            return med_lat, med_lon, True
+    if is_lat_outlier or is_lon_outlier:
+        last_correct_lat = latlon_buffer['lat_buf'][-2]
+        last_correct_lon = latlon_buffer['lon_buf'][-2]
+        
+        latlon_buffer['lat_buf'][-1] = last_correct_lat
+        latlon_buffer['lon_buf'][-1] = last_correct_lon
+        
+        return last_correct_lat, last_correct_lon, True
 
-        return curr_lat, curr_lon, False
+    return curr_lat, curr_lon, False
 
 def bearing_filter(raw_bearing_rad, buffer):
     buffer['sin'].append(np.sin(raw_bearing_rad))

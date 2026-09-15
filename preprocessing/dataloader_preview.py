@@ -196,15 +196,18 @@ def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0
         out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            futures = [executor.submit(generate_frame, dataset, i) for i in range(num_frames)]
-            
-            # Loop through all indices
-            for future in tqdm(futures, desc="Encoding Video"):
-                frame = future.result()
+            frames_generator = executor.map(
+                lambda i: generate_frame(dataset, i), 
+                range(num_frames), 
+                chunksize=1
+            )
+
+            for frame in tqdm(frames_generator, total=num_frames, desc="Encoding Video"):
                 if frame.shape[0] != h or frame.shape[1] != w:
                     frame = cv2.resize(frame, (w, h))
 
                 out.write(frame)
+                del frame  # Immediately free rendered array from RAM
 
         out.release()
         print(f"[VIDEO MODE] Video rendered successfully to: {output_path}")

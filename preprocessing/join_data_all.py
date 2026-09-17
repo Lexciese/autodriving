@@ -3,6 +3,8 @@ import cv2
 from PIL import Image, ImageDraw, ImageFont
 import os
 import yaml
+from pathlib import Path
+from tqdm import tqdm
 
 from preprocessing.data_util import hampel_filter, bearing_filter, resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, latlon_to_yaw, euler_from_quaternion
 from preprocessing.data_util import PIDController, pid_control
@@ -45,6 +47,9 @@ for route in route_list:
 
     join_img_folder = configx.datadir + route + "/join_img/all_img/"
     os.makedirs(join_img_folder, exist_ok=True)
+    if Path(configx.datadir + route + "/join_img/" + route + ".avi").exists():
+        print(f"{join_img_folder} is already generated")
+        continue
 
     # Load route points
     with open(configx.datadir + route + "/" + route + "_routepoint_list.yml", 'r') as rp_listx:
@@ -57,17 +62,19 @@ for route in route_list:
 
     out_video = None
 
+    seq_len = configx.seq_len
+    pred_len = configx.pred_len
+    data_rate = configx.hz
+    len_files = len(file_list)
     # Loop frames
-    for i in range(configx.gap_bearing, int(len(file_list) - (configx.n_wp * configx.wp_gap))):
-        filenum = file_list[i][:-4]
-        print(join_img_folder + filenum)
+    for current_idx in tqdm(range((seq_len - 1), (len_files - pred_len * data_rate)), "Generating Frames", len(file_list)):
+        filenum = file_list[current_idx][:-4]
+        # print(join_img_folder + filenum)
 
         # Global coordinate to local coordinate for next route
         with open(ddir_meta + filenum + ".yml", 'r') as curr_metafile:
             curr_meta = yaml.safe_load(curr_metafile)
         velocity = np.abs(curr_meta["velocity"])
-        # veh_curr_lat = curr_meta['global_position_latlon'][0]
-        # veh_curr_lon = curr_meta['global_position_latlon'][1]
 
         raw_curr_lat = curr_meta['global_position_latlon'][0]
         raw_curr_lon = curr_meta['global_position_latlon'][1]
@@ -81,7 +88,8 @@ for route in route_list:
             veh_prev_lat = latlon_buffer['lat_buf'][prev_offset]
             veh_prev_lon = latlon_buffer['lon_buf'][prev_offset]
         else:
-            with open(ddir_meta + file_list[i - configx.gap_bearing], 'r') as prev_metafile:
+            prev_idx = max(0, current_idx - configx.gap_bearing)
+            with open(ddir_meta + file_list[prev_idx], 'r') as prev_metafile:
                 prev_meta = yaml.safe_load(prev_metafile)
             veh_prev_lat = prev_meta['global_position_latlon'][0]
             veh_prev_lon = prev_meta['global_position_latlon'][1]
@@ -92,8 +100,8 @@ for route in route_list:
         if velocity > 0.5:
             bearing_est = "GNSS"
             raw_bearing_veh = latlon_to_yaw(
-                    veh_curr_lat, veh_curr_lon,
-                    veh_prev_lat, veh_prev_lon
+                veh_curr_lat, veh_curr_lon,
+                veh_prev_lat, veh_prev_lon
             )
         else:
             bearing_est = "IMU"
@@ -145,7 +153,7 @@ for route in route_list:
             nextr_x_frame, nextr_y_frame = plot_lidfront_rpwp(configx, nextr_local_point[0], nextr_local_point[1])
             rp_lidfront_frame.append(np.array([nextr_x_frame, nextr_y_frame]))
 
-        # Waypoint computation
+        # Waypoint computation based on future_idx sampling logic from dataloader
         _, _, local_veh_heading = euler_from_quaternion(
             w=curr_meta['local_orientation_xyzw'][3],
             x=curr_meta['local_orientation_xyzw'][0],
@@ -158,9 +166,16 @@ for route in route_list:
         wp_sdc_frame = []
         wp_lidbev_frame = []
         wp_lidfront_frame = []
-        for j in range(1, configx.n_wp + 1):
-            file_name_next = file_list[int(i + j * configx.wp_gap)]
-            with open(ddir_meta + file_name_next[:-3] + "yml", 'r') as next_metafile:
+        
+        future_indices = range(
+            current_idx + data_rate,
+            current_idx + (pred_len + 1) * data_rate,
+            data_rate
+        )
+        
+        for future_idx in future_indices:
+            file_name_next = file_list[future_idx]
+            with open(ddir_meta + file_name_next[:-4] + ".yml", 'r') as next_metafile:
                 next_meta = yaml.safe_load(next_metafile)
                 _, _, seq_theta = euler_from_quaternion(
                     w=next_meta['local_orientation_xyzw'][3],
@@ -211,7 +226,7 @@ for route in route_list:
             lidar_bev_segcol_wprp = cv2.circle(lidar_bev_segcol_wprp, (rp_lidbev_frame[k][0], rp_lidbev_frame[k][1]), radius=3, color=bev_color, thickness=2)
             lidar_front_segcol_wprp = cv2.circle(lidar_front_segcol_wprp, (rp_lidfront_frame[k][0], rp_lidfront_frame[k][1]), radius=3, color=(255, 255, 255), thickness=2)
 
-        for k in range(configx.n_wp):
+        for k in range(len(wp_local)):
             lidar_bev_segcol_wprp = cv2.circle(lidar_bev_segcol_wprp, (wp_lidbev_frame[k][0], wp_lidbev_frame[k][1]), radius=2, color=(255, 255, 255), thickness=-1)
             lidar_front_segcol_wprp = cv2.circle(lidar_front_segcol_wprp, (wp_lidfront_frame[k][0], wp_lidfront_frame[k][1]), radius=2, color=(255, 255, 255), thickness=-1)
 
@@ -249,7 +264,7 @@ for route in route_list:
             ("OUTPUT", ""),
         ]
 
-        for wp_idx in range(min(3, configx.n_wp)):
+        for wp_idx in range(min(3, len(wp_local))):
             txt_wp = f"Wp{wp_idx+1} Loc: x: {format(np.round(wp_local[wp_idx][0], 3), '.3f')} | y: {format(np.round(wp_local[wp_idx][1], 3), '.3f')}"
             telemetry_lines.append((txt_wp, ""))
 
@@ -291,7 +306,7 @@ for route in route_list:
         # Initialize VideoWriter
         if out_video is None:
             out_video = cv2.VideoWriter(
-                configx.datadir + route + '/join_img/' + route + '_hampel_plus_bearing_maf.avi',
+                configx.datadir + route + '/join_img/' + route + '.avi',
                 cv2.VideoWriter_fourcc(*'DIVX'),
                 configx.fps,
                 (final_img.shape[1], final_img.shape[0])

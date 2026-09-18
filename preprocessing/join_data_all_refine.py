@@ -193,6 +193,7 @@ for route in route_list:
             rp_lidfront_frame.append(np.array([nextr_x_frame, nextr_y_frame]))
 
         # Waypoint computation based on future_idx sampling logic from dataloader
+        # local_orientation_xyzw is in ENU coordinate system so local_veh_heading and seq_theta too
         _, _, local_veh_heading = euler_from_quaternion(
             w=curr_meta['local_orientation_xyzw'][3],
             x=curr_meta['local_orientation_xyzw'][0],

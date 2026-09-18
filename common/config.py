@@ -1,8 +1,7 @@
-"""Shared configuration for the ai23 and preprocessing packages."""
-
 import os
 from datetime import datetime
 from pathlib import Path
+import yaml
 
 import numpy as np
 import torch
@@ -33,6 +32,7 @@ class GlobalConfig:
     # Data paths
     datadir = str(_REPO_ROOT / "datasetx") + "/"
     root_dir = str(_REPO_ROOT / 'dataset' / 'dataset')
+    select_route = "ringroad" # "all" "ugm_baru" # ringroad
     train_dir = root_dir + '/train_routes'
     val_dir = root_dir + '/val_routes'
     test_dir = root_dir + '/test_routes'
@@ -53,7 +53,9 @@ class GlobalConfig:
     # Recording / route
     hz = 4  # samples recorded per second
     bias_basic = 15
-    bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
+    # bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
+    bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
+    imu_harmonic_coeffs = np.array(yaml.safe_load(open(_REPO_ROOT / "common" / "imu_harmonic_coeffs.yml", "r")), dtype=float)
     rp1_close = 6  # min distance (m) to advance to the next route point
     route_gap_distance = 6  # in meters
     n_buffer = 0  # moving-average buffer (seconds)
@@ -68,7 +70,7 @@ class GlobalConfig:
     # Training
     inputs = 'segdep'  # segdep | seg | dep
     logdir_name = 'log/xr20_' + inputs
-    logdir = str(_REPO_ROOT / logdir_name) + "_seq" + str(seq_len) + f"_{string_date}"
+    logdir = str(_REPO_ROOT / logdir_name) + "_seq" + str(seq_len) + f"_{string_date}_route_{select_route}"
     init_stop_counter = 30
     batch_size = 4
     lr = 1e-4  # learning rate (AdamW)
@@ -198,7 +200,7 @@ class GlobalConfig:
     text_gap = (fontsize+4)*font_mul
     metadata_gap = 110*font_mul
 
-    fps = 20
+    fps = 7
     rgb_res_ori = [720, 1280]  # HxW (HD720)
     scale_w = rgb_res_ori[1]/front_w
     scaled_H_rgb = int(rgb_res_ori[0]/scale_w)

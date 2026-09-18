@@ -240,7 +240,7 @@ def main():
     correct_imu_fn, coeff = build_harmonic_correction_function(imu_bearing, ref_bearing, n_harmonics=2)
     print(f"harmonic sinusoidal coeffs: {coeff}")
     with open("imu_harmonic_coeffs.yml", "w") as c:
-        yaml.dump(float(coeff), c)
+        yaml.dump(coeff.astype(float).tolist(), c)
 
     corrected_imu_bearing = correct_imu_fn(imu_bearing)
 

@@ -6,6 +6,7 @@ import os
 import yaml
 from pathlib import Path
 from tqdm import tqdm
+import pandas as pd
 
 from preprocessing.data_util import hampel_filter, bearing_filter, resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, latlon_to_yaw, euler_from_quaternion
 from preprocessing.data_util import PIDController, pid_control
@@ -15,39 +16,80 @@ from collections import deque
 def normalize_angle_deg(angle):
     return (angle + 180) % 360 - 180
 
-def bias_slope(angle_x, bias_a, bias_b, angle_a, angle_b):
-    bias_x = (((angle_x-angle_a)/(angle_b-angle_a)) * (bias_b-bias_a)) + bias_a
-    return bias_x
+def compute_imu_yaw(q, offset=0.0):
+    r = R.from_quat(q)
+    # Project the sensor's X-axis (+X Forward) into world horizontal frame
+    x_world = r.apply([1, 0, 0])
+    # Compute Compass Yaw: arctan2(East, North)
+    yaw_rad = np.arctan2(x_world[0], x_world[1])
+    return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
-def bearing_biasing(in_angle, bearing_bias):
-    if 0 <= in_angle < 50:
-        bias_x = bearing_bias[0]
-    elif 50 <= in_angle < 70:
-        bias_x = bias_slope(in_angle, bearing_bias[0], bearing_bias[1], 50, 70)
-    elif 70 <= in_angle < 110:
-        bias_x = bearing_bias[1]
-    elif 110 <= in_angle < 130:
-        bias_x = bias_slope(in_angle, bearing_bias[1], bearing_bias[2], 110, 130)
-    elif 130 <= in_angle < 170:
-        bias_x = bearing_bias[2]
-    elif 170 <= in_angle <= 180:
-        bias_x = bias_slope(in_angle, bearing_bias[2], (bearing_bias[2]+bearing_bias[3])/2, 170, 180)
-    elif -180 <= in_angle < -170:
-        bias_x = bias_slope(in_angle, (bearing_bias[2]+bearing_bias[3])/2, bearing_bias[3], -180, -170)
-    elif -170 <= in_angle < -130:
-        bias_x = bearing_bias[3]
-    elif -130 <= in_angle < -110:
-        bias_x = bias_slope(in_angle, bearing_bias[3], bearing_bias[4], -130, -110)
-    elif -110 <= in_angle < -70:
-        bias_x = bearing_bias[4]
-    elif -70 <= in_angle < -50:
-        bias_x = bias_slope(in_angle, bearing_bias[4], bearing_bias[5], -70, -50)
-    elif -50 <= in_angle < 0:
-        bias_x = bearing_bias[5]
-    else:
-        bias_x = 0
-    # return normalize_angle_deg(in_angle + bias_x)
-    return in_angle + bias_x
+
+def build_lut_correction_function(meta_dir, file_list, filtered_lats, filtered_lons, n_bins=360):
+    imu_bearings = []
+    ref_bearings = []
+
+    prev_lat = filtered_lats[0]
+    prev_lon = filtered_lons[0]
+
+    for i in range(len(file_list)):
+        with open(os.path.join(meta_dir, file_list[i]), 'r') as f:
+            curr_meta = yaml.safe_load(f)
+
+        velocity = np.abs(curr_meta.get("velocity", 0.0))
+        curr_lat = filtered_lats[i]
+        curr_lon = filtered_lons[i]
+
+        dLat_m = (curr_lat - prev_lat) * 40008000 / 360
+        dLon_m = (curr_lon - prev_lon) * 40075000 * np.cos(np.radians(curr_lat)) / 360
+
+        # Sample bearing only when moving to ensure clean reference data
+        if np.sqrt(dLat_m**2 + dLon_m**2) >= 1.0 and velocity > 1.5:
+            ref_yaw = latlon_to_yaw(curr_lat, curr_lon, prev_lat, prev_lon)
+            raw_imu_yaw = compute_imu_yaw(curr_meta['global_orientation_xyzw'])
+
+            ref_bearings.append(ref_yaw)
+            imu_bearings.append(raw_imu_yaw)
+
+            prev_lat = curr_lat
+            prev_lon = curr_lon
+
+    if len(imu_bearings) < 10:
+        return lambda raw_rad: raw_rad
+
+    imu_deg = np.degrees(np.array(imu_bearings))
+    ref_deg = np.degrees(np.array(ref_bearings))
+
+    # Calculate shortest angular error: ref - imu
+    errors_deg = np.degrees(np.arctan2(np.sin(np.radians(ref_deg - imu_deg)), 
+                                       np.cos(np.radians(ref_deg - imu_deg))))
+
+    # Bin error across -180 to 180 degrees
+    bin_edges = np.linspace(-180, 180, n_bins + 1)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    binned_errors = []
+    for i in range(n_bins):
+        mask = (imu_deg >= bin_edges[i]) & (imu_deg < bin_edges[i+1])
+        if np.any(mask):
+            binned_errors.append(np.median(errors_deg[mask]))
+        else:
+            binned_errors.append(np.nan)
+
+    # Fill unmeasured bins via linear interpolation and boundary padding
+    s_err = pd.Series(binned_errors).interpolate(method='linear').bfill().ffill()
+    lut_errors_deg = s_err.to_numpy()
+
+    def correct_imu_bearing_lut(raw_imu_rad):
+        imu_d = np.degrees(raw_imu_rad)
+        # Interpolate error dynamically with 360 degree periodicity
+        corr_error_d = np.interp(imu_d, bin_centers, lut_errors_deg, period=360.0)
+        corrected_d = imu_d + corr_error_d
+        corrected_rad = np.radians(corrected_d)
+        return (corrected_rad + np.pi) % (2.0 * np.pi) - np.pi
+
+    return correct_imu_bearing_lut
+
 
 # PID Controller
 turn_controller = PIDController(K_P=0.5, K_I=0.25, K_D=0.15, n=15)
@@ -98,6 +140,40 @@ for route in route_list:
     file_list = os.listdir(ddir_meta)
     file_list.sort()
 
+    # Pre-extract raw coordinates across entire route
+    all_raw_lats = []
+    all_raw_lons = []
+    for f_name in file_list:
+        with open(ddir_meta + f_name, 'r') as f_meta:
+            m_data = yaml.safe_load(f_meta)
+            all_raw_lats.append(m_data['global_position_latlon'][0])
+            all_raw_lons.append(m_data['global_position_latlon'][1])
+
+    # Run Hampel Filter across the full sequence first
+    s_lats = pd.Series(all_raw_lats)
+    s_lons = pd.Series(all_raw_lons)
+    
+    # Apply Hampel outlier removal to series
+    med_lats = s_lats.rolling(window=5, min_periods=1, center=True).median()
+    mad_lats = (s_lats - med_lats).abs().rolling(window=5, min_periods=1, center=True).median()
+    outliers_lats = (s_lats - med_lats).abs() > (3.0 * 1.4826 * mad_lats)
+    filtered_lats = s_lats.copy()
+    filtered_lats[outliers_lats] = med_lats[outliers_lats]
+
+    med_lons = s_lons.rolling(window=5, min_periods=1, center=True).median()
+    mad_lons = (s_lons - med_lons).abs().rolling(window=5, min_periods=1, center=True).median()
+    outliers_lons = (s_lons - med_lons).abs() > (3.0 * 1.4826 * mad_lons)
+    filtered_lons = s_lons.copy()
+    filtered_lons[outliers_lons] = med_lons[outliers_lons]
+
+    filtered_lats = filtered_lats.tolist()
+    filtered_lons = filtered_lons.tolist()
+
+    # Construct LUT for IMU Bearing Correction using Hampel-filtered coordinates
+    correct_imu_lut = build_lut_correction_function(
+        ddir_meta, file_list, filtered_lats, filtered_lons, n_bins=360
+    )
+
     out_video = None
 
     seq_len = configx.seq_len
@@ -107,7 +183,6 @@ for route in route_list:
     # Loop frames
     for current_idx in tqdm(range((seq_len - 1), (len_files - pred_len * data_rate)), "Generating Frames", len(file_list)):
         filenum = file_list[current_idx][:-4]
-        # print(join_img_folder + filenum)
 
         # Global coordinate to local coordinate for next route
         with open(ddir_meta + filenum + ".yml", 'r') as curr_metafile:
@@ -135,36 +210,27 @@ for route in route_list:
         dLat_m = (veh_curr_lat - veh_prev_lat) * 40008000 / 360
         dLon_m = (veh_curr_lon - veh_prev_lon) * 40075000 * np.cos(np.radians(veh_curr_lat)) / 360
 
-        # Make sure bearing is in NWU coordinate system
-        # calculate latlon based bearing
+        # Calculate latlon based bearing
         latlon_bearing = latlon_to_yaw(
                 veh_curr_lat, veh_curr_lon,
                 veh_prev_lat, veh_prev_lon
         )
-        # Calculate imu bearing
+        
+        # Calculate raw IMU bearing
         q = curr_meta['global_orientation_xyzw']
-        r = R.from_quat(q)
-        # Project the sensor's X-axis (+X Forward) into world horizontal frame
-        x_world = r.apply([1, 0, 0])
-        # Compute NWU Yaw: North = 0, West = +90, East = -90
-        yaw_nwu_rad = np.arctan2(-x_world[0], x_world[1])
-        # Wrap to [-pi, +pi]
-        offset = 0.0
-        imu_bearing = (yaw_nwu_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
-        # imu_bearing = np.radians(bearing_biasing(np.degrees(yaw_nwu_rad), configx.bearing_bias))
+        raw_imu_bearing = compute_imu_yaw(q)
+        
+        # Apply LUT Correction to raw IMU bearing
+        corrected_imu_bearing = correct_imu_lut(raw_imu_bearing)
 
-        # velocity = 0.0
-        if velocity > 0.5:
-            bearing_est = "GNSS"
-            raw_bearing_veh = latlon_bearing
-        else:
-            bearing_est = "IMU"
-            raw_bearing_veh = imu_bearing
+        velocity_ms = curr_meta['velocity']
+        velocity_kmh = velocity_ms * 3.6
+
+        bearing_est = "IMU (LUT)"
+        raw_bearing_veh = corrected_imu_bearing
 
         bearing_veh = bearing_filter(raw_bearing_veh, bearing_buffer)
         bearing_veh_deg = np.degrees(bearing_veh)
-        velocity_ms = curr_meta['velocity']
-        velocity = velocity_ms * 3600 / 1000  # Convert to km/h
 
         # Compute global to local transformation
         rp_sdc_frame = []
@@ -284,30 +350,27 @@ for route in route_list:
 
         # ---------------- LAYOUT ASSEMBLY ----------------
 
-        # 1. Left column target width (1024px)
         left_column_w = 1024
 
-        # 2. Scale RGB Front (1280x720 -> 1024x576)
         rgb_h = int(rgb_front.shape[0] * (left_column_w / rgb_front.shape[1]))
         rgb_front_scaled = cv2.resize(rgb_front, (left_column_w, rgb_h), interpolation=cv2.INTER_LINEAR)
 
-        # 3. Scale Front LiDAR streams proportionally (512x64 -> 1024x128)
         front_lidar_h = int(lidar_front_depcol.shape[0] * (left_column_w / lidar_front_depcol.shape[1]))
         front_dep_scaled = cv2.resize(lidar_front_depcol, (left_column_w, front_lidar_h), interpolation=cv2.INTER_LINEAR)
         front_seg_scaled = cv2.resize(lidar_front_segcol_wprp, (left_column_w, front_lidar_h), interpolation=cv2.INTER_LINEAR)
 
-        # 4. Construct Left Column: [RGB Front | Front Depth | Front Seg]
         left_column = np.concatenate((rgb_front_scaled, front_dep_scaled, front_seg_scaled), axis=0)
-        total_h = left_column.shape[0]  # Total height = 832px
+        total_h = left_column.shape[0]
 
-        # 5. DYNAMICALLY GENERATE NON-TRUNCATED OVERLAY
+        # Telemetry Overlay
         telemetry_lines = [
             ("INPUT", ""),
             (f"File Name: {filenum}.yml", ""),
-            (f"Speed: {format(np.round(velocity, 3), '.3f')} km/h", ""),
+            (f"Speed: {format(np.round(velocity_kmh, 3), '.3f')} km/h", ""),
             (f"Bearing: {format(np.round(bearing_veh_deg, 3), '.3f')} ({bearing_est})", ""),
             (f"Latlon Bearing: {format(np.round(np.degrees(latlon_bearing), 3), '.3f')}", ""),
-            (f"IMU Bearing: {format(np.round(np.degrees(imu_bearing), 3), '.3f')}", ""),
+            (f"Raw IMU Bearing: {format(np.round(np.degrees(raw_imu_bearing), 3), '.3f')}", ""),
+            (f"LUT IMU Bearing: {format(np.round(np.degrees(corrected_imu_bearing), 3), '.3f')}", ""),
             (f"Robot Lat: {format(np.round(veh_curr_lat, 6), '.6f')}", ""),
             (f"Robot Lon: {format(np.round(veh_curr_lon, 6), '.6f')}", ""),
             (f"Rp1 Lat: {format(np.round(rp_list['route_point']['latitude'][0], 6), '.6f')}", ""),
@@ -330,12 +393,10 @@ for route in route_list:
             (f"Brake: {format(np.round(brake, 4), '.4f')}", "")
         ])
 
-        # Compact line spacing calculation to fit overlay entirely inside RGB View
         line_gap = min(22, int(rgb_h / (len(telemetry_lines) + 2)))
         overlay_w = 420
         overlay_h = (len(telemetry_lines) + 1) * line_gap
 
-        # Create translucent RGBA overlay panel (50% transparency = 128 Alpha)
         overlay_pil = Image.new('RGBA', (overlay_w, overlay_h), (0, 0, 0, 128))
         draw = ImageDraw.Draw(overlay_pil)
 
@@ -344,20 +405,16 @@ for route in route_list:
             if line_text:
                 draw.text((x_offset, 8 + idx * line_gap), line_text, font=configx.fontx, fill=(255, 255, 255, 255))
 
-        # Alpha blend overlay onto top-left corner of left_column frame
         left_column_pil = Image.fromarray(cv2.cvtColor(left_column, cv2.COLOR_BGR2RGB)).convert('RGBA')
         left_column_pil.paste(overlay_pil, (10, 10), overlay_pil)
         left_column = cv2.cvtColor(np.array(left_column_pil.convert('RGB')), cv2.COLOR_RGB2BGR)
 
-        # 6. ENLARGE BEV STACK TO FILL THE ENTIRE RIGHT COLUMN HEIGHT
-        bev_stack_raw = np.concatenate((lidar_bev_depcol, lidar_bev_segcol_wprp), axis=0)  # Native 256x512
-        bev_target_w = int(bev_stack_raw.shape[1] * (total_h / bev_stack_raw.shape[0]))    # Proportional width
+        bev_stack_raw = np.concatenate((lidar_bev_depcol, lidar_bev_segcol_wprp), axis=0)
+        bev_target_w = int(bev_stack_raw.shape[1] * (total_h / bev_stack_raw.shape[0]))
         bev_column = cv2.resize(bev_stack_raw, (bev_target_w, total_h), interpolation=cv2.INTER_LINEAR)
 
-        # 7. Final Concatenation: [ Left Column (with Overlay) | Scaled Right BEV Column ]
         final_img = np.concatenate((left_column, bev_column), axis=1)
 
-        # Initialize VideoWriter
         if out_video is None:
             out_video = cv2.VideoWriter(
                 configx.datadir + route + '/join_img/' + route + '.avi',
@@ -366,7 +423,6 @@ for route in route_list:
                 (final_img.shape[1], final_img.shape[0])
             )
 
-        # cv2.imwrite(join_img_folder+filenum+".png", final_img)
         cv2.imwrite(join_img_folder+filenum+".jpg", final_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
         out_video.write(np.uint8(final_img))
 

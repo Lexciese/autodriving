@@ -15,7 +15,7 @@ def imu_to_yaw(q, offset=0.0):
     
     # ENU Frame Compass Bearing: arctan2(East, North) -> arctan2(x_world[0], x_world[1])
     # North = 0, East = +pi/2 (+90 deg), West = -pi/2 (-90 deg)
-    yaw_rad = np.arctan2(x_world[0], x_world[1])
+    yaw_rad = np.arctan2(-x_world[0], x_world[1])
     
     return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
@@ -26,7 +26,7 @@ def latlon_to_yaw(lat, lon, lat0, lon0, offset=0.0):
     x = np.sin(dlon) * np.cos(lat)
     y = np.cos(lat0) * np.sin(lat) - np.sin(lat0) * np.cos(lat) * np.cos(dlon)
     # Forward azimuth formula: arctan2(x, y) where North = 0, East = +pi/2
-    yaw = np.arctan2(x, y)
+    yaw = np.arctan2(-x, y)
     return ((yaw + offset) + np.pi) % (2.0 * np.pi) - np.pi
 
 

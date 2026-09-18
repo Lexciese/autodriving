@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import deque
 from pathlib import Path
+from tqdm import tqdm
 from preprocessing.config import GlobalConfig
 configx = GlobalConfig()
 
@@ -142,9 +143,9 @@ for route in route_list:
     prev_lon = routes['first_point']['longitude']
 
     #loop routepoints
-    for i in range(0, len(file_list)):
+    for i in tqdm(range(0, len(file_list))):
         file_name = file_list[i]
-        print(ddir_meta+file_name)
+        # print(ddir_meta+file_name)
 
         with open(ddir_meta+file_name, 'r') as curr_metafile:
             curr_meta = yaml.safe_load(curr_metafile)
@@ -201,7 +202,7 @@ for route in route_list:
         else:
             euler_log['ekf_y_maf'].append(0)
 
-        pd.DataFrame(euler_log).to_csv(configx.datadir+route+"/"+route+"_ahrs_rec.csv", index=False)
+    pd.DataFrame(euler_log).to_csv(configx.datadir+route+"/"+route+"_ahrs_rec.csv", index=False)
 
     #save routepoints ke yaml
     with open(configx.datadir+route+"/"+route+"_routepoint_list.yml", 'w') as c:

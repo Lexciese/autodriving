@@ -5,6 +5,7 @@ from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import deque
+from pathlib import Path
 from preprocessing.config import GlobalConfig
 configx = GlobalConfig()
 
@@ -30,6 +31,8 @@ for route in route_list:
     # if route in route_listx: #kalau termasuk route yang tidak diproses, skip
     #     continue
     if os.path.isfile(configx.datadir+route):  #kalau dia file, maka skip
+        continue
+    if Path(configx.datadir+route+"/"+route+"_routepoint_list.yml").exists():
         continue
 
     ddir_meta = configx.datadir+route+"/meta/"

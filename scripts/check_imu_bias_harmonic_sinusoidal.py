@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 import plotly.graph_objects as go
 
-
+# projects into NWU system
 def imu_to_yaw(q, offset=0.0):
     r = R.from_quat(q)
     # Project the sensor's X-axis (+X Forward) into world horizontal frame
@@ -15,18 +15,18 @@ def imu_to_yaw(q, offset=0.0):
     
     # ENU Frame Compass Bearing: arctan2(East, North) -> arctan2(x_world[0], x_world[1])
     # North = 0, East = +pi/2 (+90 deg), West = -pi/2 (-90 deg)
-    yaw_rad = np.arctan2(x_world[0], x_world[1])
+    yaw_rad = np.arctan2(-x_world[0], x_world[1])
     
     return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
-
+# Projects into NWU system
 def latlon_to_yaw(lat, lon, lat0, lon0, offset=0.0):
     lat, lon, lat0, lon0 = map(np.radians, [lat, lon, lat0, lon0])
     dlon = lon - lon0
     x = np.sin(dlon) * np.cos(lat)
     y = np.cos(lat0) * np.sin(lat) - np.sin(lat0) * np.cos(lat) * np.cos(dlon)
     # Forward azimuth formula: arctan2(x, y) where North = 0, East = +pi/2
-    yaw = np.arctan2(x, y)
+    yaw = np.arctan2(-x, y)
     return ((yaw + offset) + np.pi) % (2.0 * np.pi) - np.pi
 
 
@@ -70,6 +70,7 @@ def build_harmonic_correction_function(imu_bearings_rad, ref_bearings_rad, n_har
 
     # Solve linear least squares: A * coeffs = errors_rad
     coeffs, _, _, _ = np.linalg.lstsq(A, errors_rad, rcond=None)
+    print(coeffs.shape)
 
     def correct_imu(imu_rad):
         imu_arr = np.atleast_1d(imu_rad)

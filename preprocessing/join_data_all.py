@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 import cv2
 from PIL import Image, ImageDraw, ImageFont
 import os
@@ -10,6 +11,43 @@ from preprocessing.data_util import hampel_filter, bearing_filter, resizecrop_ma
 from preprocessing.data_util import PIDController, pid_control
 
 from collections import deque
+
+def normalize_angle_deg(angle):
+    return (angle + 180) % 360 - 180
+
+def bias_slope(angle_x, bias_a, bias_b, angle_a, angle_b):
+    bias_x = (((angle_x-angle_a)/(angle_b-angle_a)) * (bias_b-bias_a)) + bias_a
+    return bias_x
+
+def bearing_biasing(in_angle, bearing_bias):
+    if 0 <= in_angle < 50:
+        bias_x = bearing_bias[0]
+    elif 50 <= in_angle < 70:
+        bias_x = bias_slope(in_angle, bearing_bias[0], bearing_bias[1], 50, 70)
+    elif 70 <= in_angle < 110:
+        bias_x = bearing_bias[1]
+    elif 110 <= in_angle < 130:
+        bias_x = bias_slope(in_angle, bearing_bias[1], bearing_bias[2], 110, 130)
+    elif 130 <= in_angle < 170:
+        bias_x = bearing_bias[2]
+    elif 170 <= in_angle <= 180:
+        bias_x = bias_slope(in_angle, bearing_bias[2], (bearing_bias[2]+bearing_bias[3])/2, 170, 180)
+    elif -180 <= in_angle < -170:
+        bias_x = bias_slope(in_angle, (bearing_bias[2]+bearing_bias[3])/2, bearing_bias[3], -180, -170)
+    elif -170 <= in_angle < -130:
+        bias_x = bearing_bias[3]
+    elif -130 <= in_angle < -110:
+        bias_x = bias_slope(in_angle, bearing_bias[3], bearing_bias[4], -130, -110)
+    elif -110 <= in_angle < -70:
+        bias_x = bearing_bias[4]
+    elif -70 <= in_angle < -50:
+        bias_x = bias_slope(in_angle, bearing_bias[4], bearing_bias[5], -70, -50)
+    elif -50 <= in_angle < 0:
+        bias_x = bearing_bias[5]
+    else:
+        bias_x = 0
+    # return normalize_angle_deg(in_angle + bias_x)
+    return in_angle + bias_x
 
 # PID Controller
 turn_controller = PIDController(K_P=0.5, K_I=0.25, K_D=0.15, n=15)
@@ -97,17 +135,31 @@ for route in route_list:
         dLat_m = (veh_curr_lat - veh_prev_lat) * 40008000 / 360
         dLon_m = (veh_curr_lon - veh_prev_lon) * 40075000 * np.cos(np.radians(veh_curr_lat)) / 360
 
-        if velocity > 0.5:
-            bearing_est = "GNSS"
-            raw_bearing_veh = latlon_to_yaw(
+        # Make sure bearing is in NWU coordinate system
+        # calculate latlon based bearing
+        latlon_bearing = latlon_to_yaw(
                 veh_curr_lat, veh_curr_lon,
                 veh_prev_lat, veh_prev_lon
-            )
+        )
+        # Calculate imu bearing
+        q = curr_meta['global_orientation_xyzw']
+        r = R.from_quat(q)
+        # Project the sensor's X-axis (+X Forward) into world horizontal frame
+        x_world = r.apply([1, 0, 0])
+        # Compute NWU Yaw: North = 0, West = +90, East = -90
+        yaw_nwu_rad = np.arctan2(-x_world[0], x_world[1])
+        # Wrap to [-pi, +pi]
+        offset = 0.0
+        imu_bearing = (yaw_nwu_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
+        # imu_bearing = np.radians(bearing_biasing(np.degrees(yaw_nwu_rad), configx.bearing_bias))
+
+        # velocity = 0.0
+        if velocity > 0.5:
+            bearing_est = "GNSS"
+            raw_bearing_veh = latlon_bearing
         else:
             bearing_est = "IMU"
-            q = curr_meta['global_orientation_xyzw']
-            w, x, y, z = q[3], q[0], q[1], q[2]
-            raw_bearing_veh = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2)) - 1.5708
+            raw_bearing_veh = imu_bearing
 
         bearing_veh = bearing_filter(raw_bearing_veh, bearing_buffer)
         bearing_veh_deg = np.degrees(bearing_veh)
@@ -254,6 +306,8 @@ for route in route_list:
             (f"File Name: {filenum}.yml", ""),
             (f"Speed: {format(np.round(velocity, 3), '.3f')} km/h", ""),
             (f"Bearing: {format(np.round(bearing_veh_deg, 3), '.3f')} ({bearing_est})", ""),
+            (f"Latlon Bearing: {format(np.round(np.degrees(latlon_bearing), 3), '.3f')}", ""),
+            (f"IMU Bearing: {format(np.round(np.degrees(imu_bearing), 3), '.3f')}", ""),
             (f"Robot Lat: {format(np.round(veh_curr_lat, 6), '.6f')}", ""),
             (f"Robot Lon: {format(np.round(veh_curr_lon, 6), '.6f')}", ""),
             (f"Rp1 Lat: {format(np.round(rp_list['route_point']['latitude'][0], 6), '.6f')}", ""),

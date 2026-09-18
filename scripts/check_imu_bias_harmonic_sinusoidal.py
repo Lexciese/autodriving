@@ -50,18 +50,9 @@ def hampel_filter(data, window_size=3, n_sigmas=3.0):
 
 
 def build_harmonic_correction_function(imu_bearings_rad, ref_bearings_rad, n_harmonics=2):
-    """
-    Fits a harmonic sinusoidal model (Fourier series) to the orientation error:
-    err(theta) = A_0 + sum_{k=1}^N [ A_k * cos(k * theta) + B_k * sin(k * theta) ]
-    
-    Parameters:
-        imu_bearings_rad (np.ndarray): Input IMU yaw bearings in radians.
-        ref_bearings_rad (np.ndarray): Ground truth / reference bearings in radians.
-        n_harmonics (int): Number of harmonic components (default 2 accounts for hard/soft iron effects).
-        
-    Returns:
-        correct_imu (function): Vectorized correction mapping function.
-    """
+    # Fits a harmonic sinusoidal model (Fourier series) to the orientation error:
+    # err(theta) = A_0 + sum_{k=1}^N [ A_k * cos(k * theta) + B_k * sin(k * theta) ]
+
     # Calculate shortest angular error: ref - imu wrapped to [-pi, pi]
     errors_rad = np.arctan2(
         np.sin(ref_bearings_rad - imu_bearings_rad),
@@ -99,7 +90,7 @@ def build_harmonic_correction_function(imu_bearings_rad, ref_bearings_rad, n_har
         wrapped_rad = (corrected_rad + np.pi) % (2.0 * np.pi) - np.pi
         return wrapped_rad if np.ndim(imu_rad) > 0 else wrapped_rad[0]
 
-    return correct_imu
+    return correct_imu, coeffs
 
 
 def plot_bearing_comparison(folder_name, ref_deg, raw_imu_deg, corrected_imu_deg):
@@ -148,8 +139,6 @@ def plot_bearing_comparison(folder_name, ref_deg, raw_imu_deg, corrected_imu_deg
 def plot_harmonic_correction_curve(
     folder_name, imu_bearings_rad, ref_bearings_rad, correct_imu_fn
 ):
-    """Plots the continuous sinusoidal correction curve over full [-180, 180] deg orientation range."""
-    # 1. Compute raw data residual errors
     raw_errors_deg = np.degrees(
         np.arctan2(
             np.sin(ref_bearings_rad - imu_bearings_rad),
@@ -158,11 +147,9 @@ def plot_harmonic_correction_curve(
     )
     imu_deg = np.degrees(imu_bearings_rad)
 
-    # 2. Evaluate fitted model across a continuous 360-degree range
     theta_eval_deg = np.linspace(-180, 180, 1000)
     theta_eval_rad = np.radians(theta_eval_deg)
 
-    # Calculate predicted offset: corrected_theta - raw_theta
     corrected_eval_rad = correct_imu_fn(theta_eval_rad)
     predicted_error_deg = np.degrees(
         np.arctan2(
@@ -171,10 +158,8 @@ def plot_harmonic_correction_curve(
         )
     )
 
-    # 3. Build Plotly Figure
     fig = go.Figure()
 
-    # Scatter of raw measurement errors
     fig.add_trace(
         go.Scatter(
             x=imu_deg,
@@ -185,7 +170,6 @@ def plot_harmonic_correction_curve(
         )
     )
 
-    # Continuous harmonic fit line
     fig.add_trace(
         go.Scatter(
             x=theta_eval_deg,
@@ -253,18 +237,15 @@ def main():
     imu_bearing = np.array(imu_bearing)
     ref_bearing = np.array(ref_bearing)
 
-    # 1. Build the harmonic sinusoidal correction function (n_harmonics=2 handles 1st and 2nd order spatial distortions)
-    correct_imu_fn = build_harmonic_correction_function(imu_bearing, ref_bearing, n_harmonics=2)
+    correct_imu_fn, coeff = build_harmonic_correction_function(imu_bearing, ref_bearing, n_harmonics=2)
+    print(coeff)
 
-    # 2. Apply harmonic correction directly (vectorized array evaluation)
     corrected_imu_bearing = correct_imu_fn(imu_bearing)
 
-    # Convert radians to degrees for visualization
     ref_deg = np.degrees(ref_bearing)
     raw_imu_deg = np.degrees(imu_bearing)
     corrected_imu_deg = np.degrees(corrected_imu_bearing)
 
-    # 3. Plot bearings using Plotly
     plot_bearing_comparison(
         dataset_path.name,
         ref_deg,

@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import torch
 import torch.nn.functional as F
+from scipy.spatial.transform import Rotation as R
 
 from ai23.config import GlobalConfig
 
@@ -11,6 +12,34 @@ def swap_RGB2BGR(matrix):
     matrix[:,:,0] = blue
     matrix[:,:,2] = red
     return matrix
+
+# # project into NWU system
+def compute_imu_yaw(q, offset=0.0):
+    r = R.from_quat(q)
+    # Project the sensor's X-axis (+X Forward) into world horizontal frame
+    x_world = r.apply([1, 0, 0])
+    # Compute Compass Yaw: arctan2(East, North)
+    yaw_rad = np.arctan2(-x_world[0], x_world[1])
+    return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
+
+def harmonic_sinusosidal_fitting(imu_rad, coeffs, n_harmonics=2):
+    imu_arr = np.atleast_1d(imu_rad)
+    
+    # Build design matrix for test input
+    A_test = [np.ones_like(imu_arr)]
+    for k in range(1, n_harmonics + 1):
+        A_test.append(np.cos(k * imu_arr))
+        A_test.append(np.sin(k * imu_arr))
+    
+    A_test = np.column_stack(A_test)
+    
+    # Predict angular error and apply correction
+    predicted_error_rad = A_test @ coeffs
+    corrected_rad = imu_arr + predicted_error_rad
+    
+    # Wrap output back to [-pi, pi]
+    wrapped_rad = (corrected_rad + np.pi) % (2.0 * np.pi) - np.pi
+    return wrapped_rad if np.ndim(imu_rad) > 0 else wrapped_rad[0]
 
 def euler_from_quaternion(w, x, y, z, rad=True): #urutannya q0, q1, q2, q3
     #https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles

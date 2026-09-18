@@ -563,6 +563,7 @@ def pid_control(waypoints, linear_velo_ms, turn_controller, speed_controller):
 
         return pid_steering, pid_throttle, brake
 
+# projects into NWU system
 def latlon_to_yaw(lat, lon, lat0, lon0, offset=0.0):
     lat, lon, lat0, lon0 = map(np.radians, [lat, lon, lat0, lon0])
     dlon = lon - lon0

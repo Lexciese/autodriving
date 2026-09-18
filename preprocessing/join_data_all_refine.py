@@ -141,13 +141,13 @@ for route in route_list:
         q = curr_meta['global_orientation_xyzw']
         raw_imu_bearing = compute_imu_yaw(q)
         
-        # Apply LUT Correction to raw IMU bearing
+        # Apply correction to raw IMU bearing
         corrected_imu_bearing = harmonic_sinusosidal_fitting(raw_imu_bearing, coeffs=imu_harmonic_coeffs, n_harmonics=2)
 
         velocity_ms = curr_meta['velocity']
         velocity_kmh = velocity_ms * 3.6
 
-        bearing_est = "IMU (LUT)"
+        bearing_est = "IMU (Corrected)"
         raw_bearing_veh = corrected_imu_bearing
 
         bearing_veh = bearing_filter(raw_bearing_veh, bearing_buffer)
@@ -291,7 +291,7 @@ for route in route_list:
             (f"Bearing: {format(np.round(bearing_veh_deg, 3), '.3f')} ({bearing_est})", ""),
             (f"Latlon Bearing: {format(np.round(np.degrees(latlon_bearing), 3), '.3f')}", ""),
             (f"Raw IMU Bearing: {format(np.round(np.degrees(raw_imu_bearing), 3), '.3f')}", ""),
-            (f"LUT IMU Bearing: {format(np.round(np.degrees(corrected_imu_bearing), 3), '.3f')}", ""),
+            (f"Corrected IMU Bearing: {format(np.round(np.degrees(corrected_imu_bearing), 3), '.3f')}", ""),
             (f"Robot Lat: {format(np.round(veh_curr_lat, 6), '.6f')}", ""),
             (f"Robot Lon: {format(np.round(veh_curr_lon, 6), '.6f')}", ""),
             (f"Rp1 Lat: {format(np.round(rp_list['route_point']['latitude'][0], 6), '.6f')}", ""),

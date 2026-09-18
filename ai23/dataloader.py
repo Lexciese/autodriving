@@ -8,7 +8,7 @@ from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from ai23.utility import latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
+from ai23.utility import compute_imu_yaw, harmonic_sinusosidal_fitting, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
 from ai23.utility import hampel_filter, bearing_filter
 from ai23.config import GlobalConfig
 from preprocessing.preprocessing_lidar import PreprocessingLidar
@@ -21,6 +21,7 @@ class KarrDataset(Dataset):
         self.pred_len = self.config.pred_len
         self.data_rate = self.config.hz
         self.rp1_close = self.config.rp1_close
+        self.imu_coeffs = self.config.imu_harmonic_coeffs
 
         self.filename = []
         self.rgb = []
@@ -136,37 +137,11 @@ class KarrDataset(Dataset):
                 velocity = np.abs(meta_current["velocity"])
 
                 curr_lat, curr_lon, is_outlier = hampel_filter(raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0)
-                # handling the prev latlon
-                prev_offset = -(1 + self.config.gap_bearing)
-                if len(latlon_buffer['lat_buf']) >= abs(prev_offset):
-                    prev_lat = latlon_buffer['lat_buf'][prev_offset]
-                    prev_lon = latlon_buffer['lon_buf'][prev_offset]
-                else:
-                    prev_idx = current_idx - self.config.gap_bearing
-                    prev_idx = max(0, prev_idx) 
-                    
-                    prev_filename = self.files[prev_idx]
-                    with open(f"{self.dir_meta}/{prev_filename}.yml", "r") as read_meta_prev:
-                        meta_prev = yaml.safe_load(read_meta_prev)
-                    prev_lat = meta_prev["global_position_latlon"][0]
-                    prev_lon = meta_prev["global_position_latlon"][1]
-                
-                if velocity > 0.5:
-                    bearing = latlon_to_yaw(
-                        curr_lat, curr_lon, prev_lat, prev_lon,
-                        offset=0.0
-                    )
-                else:
-                    _, _, bearing = euler_from_quaternion(
-                        w=meta_current['global_orientation_xyzw'][3],
-                        x=meta_current['global_orientation_xyzw'][0],
-                        y=meta_current['global_orientation_xyzw'][1],
-                        z=meta_current['global_orientation_xyzw'][2],
-                        rad=True
-                    )
-                    bearing = bearing - (np.pi / 2.0)
-
-                bearing = bearing_filter(bearing, bearing_buffer)
+                q = meta_current['global_orientation_xyzw']
+                raw_imu_bearing = compute_imu_yaw(q)
+                # Apply correction to raw IMU bearing
+                corrected_imu_bearing = harmonic_sinusosidal_fitting(raw_imu_bearing, coeffs=self.imu_coeffs, n_harmonics=2)
+                bearing = bearing_filter(corrected_imu_bearing, bearing_buffer)
 
                 self.preload_data["bearing"].append(bearing)
                 self.preload_data["lat"].append(curr_lat)

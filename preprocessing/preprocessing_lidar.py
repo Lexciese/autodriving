@@ -441,6 +441,13 @@ def main():
                 'rear_seg': dir_lidseg_rea / f"{file}.png",
                 'rear_dep': dir_liddep_rea / f"{file}.png"
             }
+            for key, value in preproc_lidar.paths.items():
+                if value.exists():
+                    preproc_lidar.paths = None
+                    break
+            if preproc_lidar.paths == None:
+                continue
+
             preproc_lidar.set_input(f"{dir_lidar}/{file}.pcd")
             preproc_lidar.process()
             preproc_lidar.get_output(as_image=True, to_file=True)

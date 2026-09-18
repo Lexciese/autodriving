@@ -27,12 +27,14 @@ def hampel_filter(data, window_size=3, n_sigmas=3.0):
 #loop pada semua route
 route_list = os.listdir(configx.datadir)
 route_list.sort()
+if configx.select_route != "all":
+    route_list = [configx.select_route]
+    print(f"only route: {configx.select_route} is selected")
+
 for route in route_list:
     # if route in route_listx: #kalau termasuk route yang tidak diproses, skip
     #     continue
     if os.path.isfile(configx.datadir+route):  #kalau dia file, maka skip
-        continue
-    if Path(configx.datadir+route+"/"+route+"_routepoint_list.yml").exists():
         continue
 
     ddir_meta = configx.datadir+route+"/meta/"

@@ -50,10 +50,8 @@ def hampel_filter(data, window_size=3, n_sigmas=3.0):
 
 
 def build_lut_correction_function(imu_bearings_rad, ref_bearings_rad, n_bins=360):
-    """
-    Builds a continuous 1D Lookup Table (LUT) mapping function using binned median values.
-    Handles angle unwrapping to prevent boundary artifacts across -pi/pi.
-    """
+    # Builds a continuous 1D Lookup Table (LUT) mapping function using binned median values.
+    # Handles angle unwrapping to prevent boundary artifacts across -pi/pi.
     # Convert to degrees for easier binning
     imu_deg = np.degrees(imu_bearings_rad)
     ref_deg = np.degrees(ref_bearings_rad)

@@ -61,9 +61,24 @@ class KarrDataset(Dataset):
         self.route_list = os.listdir(config.datadir)
         self.route_list.sort()
 
+        if self.config.select_route != "all":
+            self.route_list = [self.config.select_route]
+            print(f"only route: {self.config.select_route} is selected")
+
         for route in self.route_list:
+            # 3 for ringroad, 3 or 7 for ugm_baru
+            history_buff = max(3, self.seq_len, self.config.gap_bearing + 1)
+            latlon_buffer = {
+                'lat_buf': deque(maxlen=3),
+                'lon_buf': deque(maxlen=3),
+                'window_size': 3
+            }
+            bearing_buffer = {
+                'sin': deque(maxlen=5),
+                'cos': deque(maxlen=5)
+            }
             path = Path(f"{self.config.datadir}/{route}")
-            preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}.npy"
+            preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}_w{latlon_buffer['window_size']}.npy"
             if os.path.exists(preload_path):
                 self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)
@@ -78,17 +93,6 @@ class KarrDataset(Dataset):
             self.files.sort()
             self.files = [os.path.splitext(filename)[0] for filename in self.files] # remove extension string
             self.len_files = len(self.files)
-
-            history_buff = max(7, self.seq_len, self.config.gap_bearing + 1)
-            latlon_buffer = {
-                'lat_buf': deque(maxlen=history_buff),
-                'lon_buf': deque(maxlen=history_buff),
-                'window_size': 7
-            }
-            bearing_buffer = {
-                'sin': deque(maxlen=5),
-                'cos': deque(maxlen=5)
-            }
 
             with open(path / f"{route}_routepoint_list.yml", "r") as rp_listx:
                 rp_list = yaml.safe_load(rp_listx)

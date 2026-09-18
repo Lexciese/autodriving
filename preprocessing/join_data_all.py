@@ -24,8 +24,7 @@ def compute_imu_yaw(q, offset=0.0):
     yaw_rad = np.arctan2(x_world[0], x_world[1])
     return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
-
-def build_lut_correction_function(meta_dir, file_list, filtered_lats, filtered_lons, n_bins=360):
+def get_bearing_pair(meta_dir, file_list, filtered_lats, filtered_lons):
     imu_bearings = []
     ref_bearings = []
 
@@ -53,6 +52,56 @@ def build_lut_correction_function(meta_dir, file_list, filtered_lats, filtered_l
 
             prev_lat = curr_lat
             prev_lon = curr_lon
+
+    return np.array(imu_bearings), np.array(ref_bearings)
+
+def build_harmonic_correction_function(meta_dir, file_list, filtered_lats, filtered_lons, n_harmonics=2):
+    imu_bearings_rad, ref_bearings_rad = get_bearing_pair(meta_dir, file_list, filtered_lats, filtered_lons)
+
+    if len(imu_bearings_rad) < 10:
+        return lambda raw_rad: raw_rad
+
+    # Calculate shortest angular error: ref - imu wrapped to [-pi, pi]
+    errors_rad = np.arctan2(
+        np.sin(ref_bearings_rad - imu_bearings_rad),
+        np.cos(ref_bearings_rad - imu_bearings_rad)
+    )
+
+    # Construct linear design matrix (basis expansion)
+    # [1, cos(theta), sin(theta), cos(2*theta), sin(2*theta), ...]
+    A = [np.ones_like(imu_bearings_rad)]
+    for k in range(1, n_harmonics + 1):
+        A.append(np.cos(k * imu_bearings_rad))
+        A.append(np.sin(k * imu_bearings_rad))
+    
+    A = np.column_stack(A)
+
+    # Solve linear least squares: A * coeffs = errors_rad
+    coeffs, _, _, _ = np.linalg.lstsq(A, errors_rad, rcond=None)
+
+    def correct_imu(imu_rad):
+        imu_arr = np.atleast_1d(imu_rad)
+        
+        # Build design matrix for test input
+        A_test = [np.ones_like(imu_arr)]
+        for k in range(1, n_harmonics + 1):
+            A_test.append(np.cos(k * imu_arr))
+            A_test.append(np.sin(k * imu_arr))
+        
+        A_test = np.column_stack(A_test)
+        
+        # Predict angular error and apply correction
+        predicted_error_rad = A_test @ coeffs
+        corrected_rad = imu_arr + predicted_error_rad
+        
+        # Wrap output back to [-pi, pi]
+        wrapped_rad = (corrected_rad + np.pi) % (2.0 * np.pi) - np.pi
+        return wrapped_rad if np.ndim(imu_rad) > 0 else wrapped_rad[0]
+
+    return correct_imu
+
+def build_lut_correction_function(meta_dir, file_list, filtered_lats, filtered_lons, n_bins=360):
+    imu_bearings, ref_bearings = get_bearing_pair(meta_dir, file_list, filtered_lats, filtered_lons)
 
     if len(imu_bearings) < 10:
         return lambda raw_rad: raw_rad

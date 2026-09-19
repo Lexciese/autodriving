@@ -16,12 +16,13 @@ from collections import deque
 def normalize_angle_deg(angle):
     return (angle + 180) % 360 - 180
 
+# project into NWU system
 def compute_imu_yaw(q, offset=0.0):
     r = R.from_quat(q)
     # Project the sensor's X-axis (+X Forward) into world horizontal frame
     x_world = r.apply([1, 0, 0])
     # Compute Compass Yaw: arctan2(East, North)
-    yaw_rad = np.arctan2(x_world[0], x_world[1])
+    yaw_rad = np.arctan2(-x_world[0], x_world[1])
     return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
 def get_bearing_pair(meta_dir, file_list, filtered_lats, filtered_lons):

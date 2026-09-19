@@ -22,7 +22,7 @@ class GlobalConfig:
     # General / device
     now = datetime.now()
     string_date = now.strftime("%d_%m_%Y-%H_%M")
-    use_tensor = True
+    use_tensor = False
     gpu_id = '0'
     gpu_device = torch.device("cuda:0")
     dtype = torch.float32
@@ -32,7 +32,7 @@ class GlobalConfig:
     # Data paths
     datadir = str(_REPO_ROOT / "datasetx") + "/"
     root_dir = str(_REPO_ROOT / 'dataset' / 'dataset')
-    select_route = "ringroad" # "all" "ugm_baru" # ringroad
+    select_route = "ugm_baru" # "all" "ugm_baru" # ringroad
     train_dir = root_dir + '/train_routes'
     val_dir = root_dir + '/val_routes'
     test_dir = root_dir + '/test_routes'

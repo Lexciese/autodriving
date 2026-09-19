@@ -1,9 +1,12 @@
+from typing import cast
 import os
 import cv2
 import yaml
 import numpy as np
 from pathlib import Path
+from tqdm import tqdm
 from pypcd4 import PointCloud
+import h5py
 from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
@@ -14,9 +17,10 @@ from ai23.config import GlobalConfig
 from preprocessing.preprocessing_lidar import PreprocessingLidar
 
 class KarrDataset(Dataset):
-    def __init__(self, config: GlobalConfig):
-        self.preproc_lidar = PreprocessingLidar(config=config)
+    def __init__(self, config: GlobalConfig, phase="train"):
         self.config: GlobalConfig = config
+        self.phase = phase
+        self.preproc_lidar = PreprocessingLidar(config=config, use_tensor=False)
         self.seq_len = self.config.seq_len
         self.pred_len = self.config.pred_len
         self.data_rate = self.config.hz
@@ -66,7 +70,14 @@ class KarrDataset(Dataset):
             self.route_list = [self.config.select_route]
             print(f"only route: {self.config.select_route} is selected")
 
+        sample_idx = 0
         for route in self.route_list:
+            path = Path(f"{self.config.datadir}/{route}")
+            self.dir_meta      = path / "meta"             # .yml
+            self.dir_rgb       = path / "camera" / "rgb"   # .png
+            self.dir_raw_pcd   = path / "lidar" / "cld"    # .pcd
+            self.dir_seg_pcd   = path / "lidar" / "seg"    # .npy
+
             # 3 for ringroad, 3 or 7 for ugm_baru
             history_buff = max(3, self.seq_len, self.config.gap_bearing + 1)
             latlon_buffer = {
@@ -78,17 +89,18 @@ class KarrDataset(Dataset):
                 'sin': deque(maxlen=5),
                 'cos': deque(maxlen=5)
             }
-            path = Path(f"{self.config.datadir}/{route}")
+
+
+            self.lidar_hdf5_path = path / "lidar" / "lidar.hdf5"
+            self.file_hdf5 = None
+            lidar_hdf5 = h5py.File(self.lidar_hdf5_path, "a")
+            frames_grp = lidar_hdf5.require_group("frames")
+
             preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}_w{latlon_buffer['window_size']}.npy"
             if os.path.exists(preload_path):
                 self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)
                 return
-
-            self.dir_meta      = path / "meta"             # .yml
-            self.dir_rgb       = path / "camera" / "rgb"   # .png
-            self.dir_raw_pcd   = path / "lidar" / "cld"    # .pcd
-            self.dir_seg_pcd   = path / "lidar" / "seg"    # .npy
 
             self.files = os.listdir(self.dir_meta)
             self.files.sort()
@@ -104,7 +116,7 @@ class KarrDataset(Dataset):
             # Past: [current_idx - seq_len + 1, current_idx]                -> rgb, raw_pcd, seg_pcd
             # Current: self.files[current_idx]                              -> local position & heading, latlon, velocity
             # Future: current_idx + data_rate, current_idx + 2*data_rate    -> local position & heading
-            for current_idx in range((self.seq_len - 1), (self.len_files - self.pred_len * self.data_rate)):
+            for current_idx in tqdm(range((self.seq_len - 1), (self.len_files - self.pred_len * self.data_rate)), desc="Preload Process", dynamic_ncols=True):
                 filename = ""
                 seq_rgb = []
                 seq_raw_pcd = []
@@ -114,11 +126,33 @@ class KarrDataset(Dataset):
                 seq_local_heading = []
 
                 # past frames
+                seq_len_idx = 0
                 for past_idx in range(current_idx - (self.seq_len - 1), current_idx + 1):
                     filename = self.files[past_idx]
                     seq_rgb.append(f"{self.dir_rgb}/{filename}.png")
                     seq_raw_pcd.append(f"{self.dir_raw_pcd}/{filename}.pcd")
                     seq_seg_pcd.append(f"{self.dir_seg_pcd}/{filename}.npy")
+                    frame_key = f"{sample_idx:06d}:{seq_len_idx:06d}"
+                    if filename not in frames_grp:
+                        raw_pcd = PointCloud.from_path(f"{self.dir_raw_pcd}/{filename}.pcd")
+                        seg_pcd = np.load(f"{self.dir_seg_pcd}/{filename}.npy")
+                        ptx = np.array(raw_pcd.pc_data['y']) * -1
+                        pty = np.array(raw_pcd.pc_data['z'])
+                        ptz = np.array(raw_pcd.pc_data['x'])
+                        ptseg = np.array(seg_pcd[:, 0])
+                        
+                        bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(
+                            ptx, pty, ptz, ptseg, use_tensor=False, config=self.config, bs=1
+                        )
+                        
+                        frame_node = frames_grp.create_group(filename)
+                        frame_node.create_dataset("bev_seg", data=bev_seg, compression="gzip", chunks=True)
+                        frame_node.create_dataset("bev_dep", data=bev_dep, compression="gzip", chunks=True)
+                        frame_node.create_dataset("front_seg", data=front_seg, compression="gzip", chunks=True)
+                        frame_node.create_dataset("front_dep", data=front_dep, compression="gzip", chunks=True)
+                    seq_len_idx += 1
+                sample_idx += 1
+
                 self.preload_data["filename"].append(filename)
                 self.preload_data["rgb"].append(seq_rgb)
                 self.preload_data["raw_pcd"].append(seq_raw_pcd)
@@ -183,6 +217,7 @@ class KarrDataset(Dataset):
                 self.preload_data["local_x"].append(seq_local_x)
                 self.preload_data["local_y"].append(seq_local_y)
                 self.preload_data["local_heading"].append(seq_local_heading)
+            lidar_hdf5.close()
             np.save(preload_path, self.preload_data)
             self._load_preload(self.preload_data)
 
@@ -209,14 +244,24 @@ class KarrDataset(Dataset):
         seq_local_y = self.local_y[index]
         seq_local_heading = self.local_heading[index]
 
+        if self.file_hdf5 is None:
+            self.file_hdf5 = h5py.File(self.lidar_hdf5_path, "r")
+
         for i in range(0, self.seq_len):
-            raw_pcd = PointCloud.from_path(seq_raw_pcd[i])
-            seg_pcd = np.load(seq_seg_pcd[i])
-            ptx = np.array(raw_pcd.pc_data['y']) * -1
-            pty = np.array(raw_pcd.pc_data['z'])
-            ptz = np.array(raw_pcd.pc_data['x'])
-            ptseg = np.array(seg_pcd[:,0])
-            bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(ptx, pty, ptz, ptseg, use_tensor=False, config=self.config, bs=1)
+            if self.phase == "test":
+                raw_pcd = PointCloud.from_path(seq_raw_pcd[i])
+                seg_pcd = np.load(seq_seg_pcd[i])
+                ptx = np.array(raw_pcd.pc_data['y']) * -1
+                pty = np.array(raw_pcd.pc_data['z'])
+                ptz = np.array(raw_pcd.pc_data['x'])
+                ptseg = np.array(seg_pcd[:,0])
+                bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(ptx, pty, ptz, ptseg, use_tensor=False, config=self.config, bs=1)
+            else:
+                frame_name = Path(seq_raw_pcd[i]).stem
+                bev_seg   = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/bev_seg"])[:]
+                bev_dep   = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/bev_dep"])[:]
+                front_seg = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/front_seg"])[:]
+                front_dep = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/front_dep"])[:]
             # bev_seg, bev_dep, front_seg, front_dep, _, _ = [1], [1], [1], [1], [1], [1] # for testing other parts
             data['bev_segs'].append(bev_seg[0])
             data['bev_deps'].append(bev_dep[0])

@@ -55,6 +55,7 @@ def test(data_loader, model, config: GlobalConfig):
     os.makedirs(save_dir, exist_ok=True)
     save_dir_log = save_dir
     os.makedirs(save_dir_log, exist_ok=True)
+    base_dir = config.datadir + config.select_route + "/"
 
     out_video = None
 
@@ -150,14 +151,8 @@ def test(data_loader, model, config: GlobalConfig):
             if '/' in filename_base:
                 fn_parts = filename_base.split('/')
                 filenum = fn_parts[-1]
-                # route_path = '/'.join(fn_parts[:-1])
-                # base_dir = config.datadir + route_path + "/"
             else:
                 filenum = filename_base
-                # base_dir = config.datadir
-
-            base_dir = "/media/mf/SATA4TB/autodriving/datasetx/2026-09-07_route00/"
-
 
             ddir_lidseg_bev = base_dir + "lidar/img/bev_seg/"
             ddir_lidseg_fro = base_dir + "lidar/img/front_seg/"
@@ -311,6 +306,7 @@ def main():
     model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
     model.load_state_dict(torch.load(os.path.join(config.logdir, 'best_model.pth')))
 
+    # train: 80%, validation: 10%, test: 10%
     karr_dataset = KarrDataset(config=config)
     total_len = len(karr_dataset)
     # train: 80%, validation: 10%, test: 10%

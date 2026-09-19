@@ -17,12 +17,13 @@ from preprocessing.preprocessing import Preprocessing
 from preprocessing.config import GlobalConfig
 
 class PreprocessingLidar(Preprocessing):
-    def __init__(self, config: GlobalConfig):
+    def __init__(self, config: GlobalConfig, use_tensor=False):
         super().__init__("lidar")
         self.config: GlobalConfig = config
+        self.use_tensor = use_tensor
         self.pcd = None
 
-        if self.config.use_tensor == False:
+        if self.use_tensor == False:
             self.grid_size = np.asarray(self.config.grid_size)
             self.max_volume_space = np.asarray(self.config.max_volume_space)
             self.min_volume_space = np.asarray(self.config.min_volume_space)
@@ -59,12 +60,12 @@ class PreprocessingLidar(Preprocessing):
             in_pcd = np.column_stack((pcd_x, pcd_y, pcd_z, pcd_i)).astype('float32')
             valid_mask = np.isfinite(in_pcd).all(axis=1)
             in_pcd = in_pcd[valid_mask]
-            if self.config.use_tensor:
+            if self.use_tensor:
                 in_pcd = torch.from_numpy(in_pcd).to(self.config.gpu_device, dtype=self.config.dtype)
 
             # preprocess
-            grid_ind, pt_fea = self._preproc_spherical(in_pcd, use_tensor=self.config.use_tensor)
-            if self.config.use_tensor == False:
+            grid_ind, pt_fea = self._preproc_spherical(in_pcd, use_tensor=self.use_tensor)
+            if self.use_tensor == False:
                 pt_fea_ten = [torch.from_numpy(i).type(torch.FloatTensor).to(self.config.gpu_device) for i in pt_fea]
                 grid_ind_ten = [torch.from_numpy(i[:, :2]).to(self.config.gpu_device) for i in grid_ind]
                 predict_labels = self.polarseg(pt_fea_ten, grid_ind_ten)
@@ -82,7 +83,7 @@ class PreprocessingLidar(Preprocessing):
                 predict_labels_np = np.expand_dims(ptseg_ten.cpu().detach().numpy(), axis=1)
                 self.predict_labels = predict_labels_np
 
-            if self.config.use_tensor == False:
+            if self.use_tensor == False:
                 pcd_coords = torch.tensor(in_pcd[:, :3]).to(self.config.gpu_device, dtype=self.config.dtype)
             else:
                 pcd_coords = in_pcd[:, :3]  # tensor
@@ -96,7 +97,7 @@ class PreprocessingLidar(Preprocessing):
                 pty_ten = pcd_coords[:, 1]
                 ptz_ten = pcd_coords[:, 2]
 
-            self.bev_seg, self.bev_dep, self.front_seg, self.front_dep, self.rear_seg, self.rear_dep = self.gen_bev_front_rear_seg_dep(ptx_ten, pty_ten, ptz_ten, ptseg_ten, use_tensor=self.config.use_tensor)
+            self.bev_seg, self.bev_dep, self.front_seg, self.front_dep, self.rear_seg, self.rear_dep = self.gen_bev_front_rear_seg_dep(ptx_ten, pty_ten, ptz_ten, ptseg_ten, use_tensor=self.use_tensor)
 
             self.bev_segcol = colorize_seg(self.bev_seg.cpu().detach().numpy(), self.config.SEG_CLASSES['colors'])
             self.bev_depcol = colorize_logdepth(self.bev_dep.cpu().detach().numpy())
@@ -165,17 +166,15 @@ class PreprocessingLidar(Preprocessing):
         if bs == None:
             bs = cfg.bs
         total_pts = len(ptx)
-        ptx = ptx.ravel()
-        pty = pty.ravel()
-        ptz = ptz.ravel()
-        ptseg = ptseg.ravel()
 
         if use_tensor == False:
-            # Radial distance from LiDAR origin
-            d_lidar = np.sqrt(ptx**2 + pty**2 + ptz**2)   # shape: (total_pts,)
+            ptx = np.asarray(ptx, dtype=np.float32).ravel()
+            pty = np.asarray(pty, dtype=np.float32).ravel()
+            ptz = np.asarray(ptz, dtype=np.float32).ravel()
+            ptseg = np.asarray(ptseg, dtype=np.int32).ravel()
 
             # Batch index for each point (correctly sized)
-            ptn = np.repeat(np.arange(bs), total_pts // bs)
+            ptn = np.repeat(np.arange(bs, dtype=np.int32), total_pts // bs)
             # BEV projection
             # BEV uses X (forward) and Z (height) axes; coordinate normalization.
             # X: map from [-lid_cover_area_lr, lid_cover_area_lr] to [0, lidbev_w-1]
@@ -185,32 +184,33 @@ class PreprocessingLidar(Preprocessing):
             z_range = cfg.lid_cover_area_rf[1] - cfg.lid_cover_area_rf[0]
             ptz_bev = ptz - z_offset
 
-            bev_x = np.round((ptx + cfg.lid_cover_area_lr) * (cfg.lidbev_w - 1) / (2 * cfg.lid_cover_area_lr))
-            bev_z = np.round((ptz_bev * (1 - cfg.lidbev_h) / z_range) + (cfg.lidbev_h - 1))
+            bev_x = np.floor((ptx + cfg.lid_cover_area_lr) * (cfg.lidbev_w - 1) / (2 * cfg.lid_cover_area_lr)).astype(np.int32)
+            bev_z = np.floor((ptz_bev * (1 - cfg.lidbev_h) / z_range) + (cfg.lidbev_h - 1)).astype(np.int32)
 
             # BEV segmentation
             valid_bev = (bev_x >= 0) & (bev_x <= cfg.lidbev_w - 1) & (bev_z >= 0) & (bev_z <= cfg.lidbev_h - 1)
-            idx_bev = valid_bev.nonzero()
+            
+            # Filter point indices FIRST before calculating depth
+            v_ptn = ptn[valid_bev]
+            v_seg = ptseg[valid_bev]
+            v_bz  = bev_z[valid_bev]
+            v_bx  = bev_x[valid_bev]
 
-            # Stack batch, class, z, x and take unique coordinates
-            coords_bev = np.stack([ptn, ptseg, bev_z, bev_x], axis=0)  # (4, total_pts)
-            coords_bev_unique = np.unique(coords_bev[:, idx_bev], axis=1).astype(np.int64)
-
-            bev_seg = np.zeros((bs, cfg.n_class_kitti, cfg.lidbev_h, cfg.lidbev_w))
-            bev_seg[coords_bev_unique[0], coords_bev_unique[1],
-                    coords_bev_unique[2], coords_bev_unique[3]] = 1.0
+            bev_seg = np.zeros((bs, cfg.n_class_kitti, cfg.lidbev_h, cfg.lidbev_w), dtype=np.float32)
+            bev_seg[v_ptn, v_seg, v_bz, v_bx] = 1.0
 
             # BEV depth (logarithmic encoding)
             # Depth is mapped linearly from [dep_min, dep_max] to [1, 10],
             # then transformed logarithmically: log_d = -log(linear_d) + 1.
             # This gives higher resolution for near objects.
 
-            idx_bev_d = np.argwhere(valid_bev)  # (N_valid, 1)
-            linear_d = np.clip(cfg.bev_multiplier * (d_lidar[idx_bev_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
-            log_d = -np.log(linear_d) + 1   # ranges from 1 (near) to ~ -1.3 (far)
+            # Radial distance calculated ONLY for valid BEV points
+            v_d_lidar = np.sqrt(ptx[valid_bev]**2 + pty[valid_bev]**2 + ptz[valid_bev]**2)
+            linear_d = np.clip(cfg.bev_multiplier * (v_d_lidar - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
+            log_d = -np.log(linear_d) + 1.0   # ranges from 1 (near) to ~ -1.3 (far)
 
-            bev_dep = np.zeros((bs, 1, cfg.lidbev_h, cfg.lidbev_w))
-            bev_dep[ptn[idx_bev_d].astype(np.int64), 0, bev_z[idx_bev_d].astype(np.int64), bev_x[idx_bev_d].astype(np.int64)] = log_d
+            bev_dep = np.zeros((bs, 1, cfg.lidbev_h, cfg.lidbev_w), dtype=np.float32)
+            bev_dep[v_ptn, 0, v_bz, v_bx] = log_d
 
             # Front and rear projections (to image‑like coordinates)
             # Front: horizontal angle = atan2(-z, x)  (points looking forward)
@@ -231,60 +231,57 @@ class PreprocessingLidar(Preprocessing):
             # Convert to pixel coordinates
             # Theoretical minimum x (horizontal) based on ±360° FOV
             x_min = -360.0 / cfg.h_res / 2
-            front_x = front_ang_h / h_res_rad - x_min
-            rear_x  = rear_ang_h  / h_res_rad - x_min
+            front_x = np.floor(front_ang_h / h_res_rad - x_min).astype(np.int32)
+            rear_x  = np.floor(rear_ang_h  / h_res_rad - x_min).astype(np.int32)
 
-            y_min = cfg.v_fov[0] /  cfg.v_res
-            y_max = int(cfg.v_fov_total /  cfg.v_res)
-            y = ang_v / v_res_rad - y_min
-            y = -1 * (y - y_max)   # flip vertical axis to match image coordinates
+            y_min = cfg.v_fov[0] / cfg.v_res
+            y_max = int(cfg.v_fov_total / cfg.v_res)
+            y = np.floor(-1.0 * ((ang_v / v_res_rad - y_min) - y_max)).astype(np.int32)
 
             # Front segmentation
-            valid_front = (front_x >= 0) & (front_x <= cfg.lidfront_w - 1) & \
-                        (y >= 0) & (y <= cfg.lidfront_h - 1)
-            idx_front = valid_front.nonzero()
+            valid_front = (front_x >= 0) & (front_x <= cfg.lidfront_w - 1) & (y >= 0) & (y <= cfg.lidfront_h - 1)
+            f_ptn = ptn[valid_front]
+            f_seg = ptseg[valid_front]
+            f_y   = y[valid_front]
+            f_x   = front_x[valid_front]
 
-            coords_front = np.stack([ptn, ptseg, y, front_x], axis=0)
-            coords_front_unique = np.unique(coords_front[:, idx_front], axis=1).astype(np.int64)
-
-            front_seg = np.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w))
-            front_seg[coords_front_unique[0], coords_front_unique[1],
-                    coords_front_unique[2], coords_front_unique[3]] = 1.0
+            front_seg = np.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w), dtype=np.float32)
+            front_seg[f_ptn, f_seg, f_y, f_x] = 1.0
 
             # Front depth
-            idx_front_d = np.argwhere(valid_front)
-            linear_d_front = np.clip(cfg.front_multiplier * (d_lidar[idx_front_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
-            log_d_front = -np.log(linear_d_front) + 1
+            f_d_lidar = np.sqrt(ptx[valid_front]**2 + pty[valid_front]**2 + ptz[valid_front]**2)
+            linear_d_front = np.clip(cfg.front_multiplier * (f_d_lidar - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
+            log_d_front = -np.log(linear_d_front) + 1.0
 
-            front_dep = np.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w))
-            front_dep[ptn[idx_front_d].astype(np.int64), 0, y[idx_front_d].astype(np.int64), front_x[idx_front_d].astype(np.int64)] = log_d_front
+            front_dep = np.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w), dtype=np.float32)
+            front_dep[f_ptn, 0, f_y, f_x] = log_d_front
 
             # Rear segmentation
             valid_rear = (rear_x >= 0) & (rear_x <= cfg.lidfront_w - 1) & (y >= 0) & (y <= cfg.lidfront_h - 1)
-            idx_rear = valid_rear.nonzero()
+            r_ptn = ptn[valid_rear]
+            r_seg = ptseg[valid_rear]
+            r_y   = y[valid_rear]
+            r_x   = rear_x[valid_rear]
 
-            coords_rear = np.stack([ptn, ptseg, y, rear_x], axis=0)
-            coords_rear_unique = np.unique(coords_rear[:, idx_rear], axis=1).astype(np.int64)
-
-            rear_seg = np.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w))
-            rear_seg[coords_rear_unique[0], coords_rear_unique[1],
-                    coords_rear_unique[2], coords_rear_unique[3]] = 1.0
+            rear_seg = np.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w), dtype=np.float32)
+            rear_seg[r_ptn, r_seg, r_y, r_x] = 1.0
 
             # Rear depth
-            idx_rear_d = np.argwhere(valid_rear)
-            linear_d_rear = np.clip(cfg.rear_multiplier * (d_lidar[idx_rear_d] - cfg.dep_min) /
-                                    (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
-            log_d_rear = -np.log(linear_d_rear) + 1
+            r_d_lidar = np.sqrt(ptx[valid_rear]**2 + pty[valid_rear]**2 + ptz[valid_rear]**2)
+            linear_d_rear = np.clip(cfg.rear_multiplier * (r_d_lidar - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, a_min=1.0, a_max=10.0)
+            log_d_rear = -np.log(linear_d_rear) + 1.0
 
-            rear_dep = np.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w))
-            rear_dep[ptn[idx_rear_d].astype(np.int64), 0, y[idx_rear_d].astype(np.int64), rear_x[idx_rear_d].astype(np.int64)] = log_d_rear
+            rear_dep = np.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w), dtype=np.float32)
+            rear_dep[r_ptn, 0, r_y, r_x] = log_d_rear
 
         else:
-            # Radial distance from LiDAR origin
-            d_lidar = torch.sqrt(ptx**2 + pty**2 + ptz**2)   # shape: (total_pts,)
+            ptx = ptx.ravel().float()
+            pty = pty.ravel().float()
+            ptz = ptz.ravel().float()
+            ptseg = ptseg.ravel().long()
 
             # Batch index for each point (correctly sized)
-            ptn = torch.arange(bs, device=cfg.gpu_device, dtype=cfg.dtype).repeat_interleave(total_pts // bs)
+            ptn = torch.arange(bs, device=cfg.gpu_device, dtype=torch.long).repeat_interleave(total_pts // bs)
             # BEV projection
             # BEV uses X (forward) and Z (height) axes; coordinate normalization.
             # X: map from [-lid_cover_area_lr, lid_cover_area_lr] to [0, lidbev_w-1]
@@ -294,33 +291,31 @@ class PreprocessingLidar(Preprocessing):
             z_range = cfg.lid_cover_area_rf[1] - cfg.lid_cover_area_rf[0]
             ptz_bev = ptz - z_offset
 
-            bev_x = torch.round((ptx + cfg.lid_cover_area_lr) * (cfg.lidbev_w - 1) / (2 * cfg.lid_cover_area_lr))
-            bev_z = torch.round((ptz_bev * (1 - cfg.lidbev_h) / z_range) + (cfg.lidbev_h - 1))
+            bev_x = torch.floor((ptx + cfg.lid_cover_area_lr) * (cfg.lidbev_w - 1) / (2 * cfg.lid_cover_area_lr)).long()
+            bev_z = torch.floor((ptz_bev * (1 - cfg.lidbev_h) / z_range) + (cfg.lidbev_h - 1)).long()
 
             # BEV segmentation
             valid_bev = (bev_x >= 0) & (bev_x <= cfg.lidbev_w - 1) & (bev_z >= 0) & (bev_z <= cfg.lidbev_h - 1)
-            idx_bev = valid_bev.nonzero().squeeze(1)
+            
+            v_ptn = ptn[valid_bev]
+            v_seg = ptseg[valid_bev]
+            v_bz  = bev_z[valid_bev]
+            v_bx  = bev_x[valid_bev]
 
-            # Stack batch, class, z, x and take unique coordinates
-            coords_bev = torch.stack([ptn, ptseg, bev_z, bev_x], dim=0)  # (4, total_pts)
-            coords_bev_unique = torch.unique(coords_bev[:, idx_bev], dim=1).long()
-
-            bev_seg = torch.zeros((bs, cfg.n_class_kitti, cfg.lidbev_h, cfg.lidbev_w),
-                                dtype=cfg.dtype, device=cfg.gpu_device)
-            bev_seg[coords_bev_unique[0], coords_bev_unique[1],
-                    coords_bev_unique[2], coords_bev_unique[3]] = 1.0
+            bev_seg = torch.zeros((bs, cfg.n_class_kitti, cfg.lidbev_h, cfg.lidbev_w), dtype=cfg.dtype, device=cfg.gpu_device)
+            bev_seg[v_ptn, v_seg, v_bz, v_bx] = 1.0
 
             # BEV depth (logarithmic encoding)
             # Depth is mapped linearly from [dep_min, dep_max] to [1, 10],
             # then transformed logarithmically: log_d = -log(linear_d) + 1.
             # This gives higher resolution for near objects.
 
-            idx_bev_d = valid_bev.nonzero()  # (N_valid, 1)
-            linear_d = torch.clip(cfg.bev_multiplier * (d_lidar[idx_bev_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
-            log_d = -torch.log(linear_d) + 1   # ranges from 1 (near) to ~ -1.3 (far)
+            v_d_lidar = torch.sqrt(ptx[valid_bev]**2 + pty[valid_bev]**2 + ptz[valid_bev]**2)
+            linear_d = torch.clamp(cfg.bev_multiplier * (v_d_lidar - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
+            log_d = -torch.log(linear_d) + 1.0   # ranges from 1 (near) to ~ -1.3 (far)
 
             bev_dep = torch.zeros((bs, 1, cfg.lidbev_h, cfg.lidbev_w), dtype=cfg.dtype, device=cfg.gpu_device)
-            bev_dep[ptn[idx_bev_d].long(), 0, bev_z[idx_bev_d].long(), bev_x[idx_bev_d].long()] = log_d
+            bev_dep[v_ptn, 0, v_bz, v_bx] = log_d
 
             # Front and rear projections (to image‑like coordinates)
             # Front: horizontal angle = atan2(-z, x)  (points looking forward)
@@ -341,56 +336,48 @@ class PreprocessingLidar(Preprocessing):
             # Convert to pixel coordinates
             # Theoretical minimum x (horizontal) based on ±360° FOV
             x_min = -360.0 / cfg.h_res / 2
-            front_x = front_ang_h / h_res_rad - x_min
-            rear_x  = rear_ang_h  / h_res_rad - x_min
+            front_x = torch.floor(front_ang_h / h_res_rad - x_min).long()
+            rear_x  = torch.floor(rear_ang_h  / h_res_rad - x_min).long()
 
-            y_min = cfg.v_fov[0] /  cfg.v_res
-            y_max = int(cfg.v_fov_total /  cfg.v_res)
-            y = ang_v / v_res_rad - y_min
-            y = -1 * (y - y_max)   # flip vertical axis to match image coordinates
+            y_min = cfg.v_fov[0] / cfg.v_res
+            y_max = int(cfg.v_fov_total / cfg.v_res)
+            y = torch.floor(-1.0 * ((ang_v / v_res_rad - y_min) - y_max)).long()
 
             # Front segmentation
-            valid_front = (front_x >= 0) & (front_x <= cfg.lidfront_w - 1) & \
-                        (y >= 0) & (y <= cfg.lidfront_h - 1)
-            idx_front = valid_front.nonzero().squeeze(1)
+            valid_front = (front_x >= 0) & (front_x <= cfg.lidfront_w - 1) & (y >= 0) & (y <= cfg.lidfront_h - 1)
+            f_ptn = ptn[valid_front]
+            f_seg = ptseg[valid_front]
+            f_y   = y[valid_front]
+            f_x   = front_x[valid_front]
 
-            coords_front = torch.stack([ptn, ptseg, y, front_x], dim=0)
-            coords_front_unique = torch.unique(coords_front[:, idx_front], dim=1).long()
-
-            front_seg = torch.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w),
-                                    dtype=cfg.dtype, device=cfg.gpu_device)
-            front_seg[coords_front_unique[0], coords_front_unique[1],
-                    coords_front_unique[2], coords_front_unique[3]] = 1.0
+            front_seg = torch.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w), dtype=cfg.dtype, device=cfg.gpu_device)
+            front_seg[f_ptn, f_seg, f_y, f_x] = 1.0
 
             # Front depth
-            idx_front_d = valid_front.nonzero()
-            linear_d_front = torch.clip(cfg.front_multiplier * (d_lidar[idx_front_d] - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
-            log_d_front = -torch.log(linear_d_front) + 1
+            f_d_lidar = torch.sqrt(ptx[valid_front]**2 + pty[valid_front]**2 + ptz[valid_front]**2)
+            linear_d_front = torch.clamp(cfg.front_multiplier * (f_d_lidar - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
+            log_d_front = -torch.log(linear_d_front) + 1.0
 
             front_dep = torch.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w), dtype=cfg.dtype, device=cfg.gpu_device)
-            front_dep[ptn[idx_front_d].long(), 0, y[idx_front_d].long(), front_x[idx_front_d].long()] = log_d_front
+            front_dep[f_ptn, 0, f_y, f_x] = log_d_front
 
             # Rear segmentation
             valid_rear = (rear_x >= 0) & (rear_x <= cfg.lidfront_w - 1) & (y >= 0) & (y <= cfg.lidfront_h - 1)
-            idx_rear = valid_rear.nonzero().squeeze(1)
+            r_ptn = ptn[valid_rear]
+            r_seg = ptseg[valid_rear]
+            r_y   = y[valid_rear]
+            r_x   = rear_x[valid_rear]
 
-            coords_rear = torch.stack([ptn, ptseg, y, rear_x], dim=0)
-            coords_rear_unique = torch.unique(coords_rear[:, idx_rear], dim=1).long()
-
-            rear_seg = torch.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w),
-                                dtype=cfg.dtype, device=cfg.gpu_device)
-            rear_seg[coords_rear_unique[0], coords_rear_unique[1],
-                    coords_rear_unique[2], coords_rear_unique[3]] = 1.0
+            rear_seg = torch.zeros((bs, cfg.n_class_kitti, cfg.lidfront_h, cfg.lidfront_w), dtype=cfg.dtype, device=cfg.gpu_device)
+            rear_seg[r_ptn, r_seg, r_y, r_x] = 1.0
 
             # Rear depth
-            idx_rear_d = valid_rear.nonzero()
-            linear_d_rear = torch.clip(cfg.rear_multiplier * (d_lidar[idx_rear_d] - cfg.dep_min) /
-                                    (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
-            log_d_rear = -torch.log(linear_d_rear) + 1
+            r_d_lidar = torch.sqrt(ptx[valid_rear]**2 + pty[valid_rear]**2 + ptz[valid_rear]**2)
+            linear_d_rear = torch.clamp(cfg.rear_multiplier * (r_d_lidar - cfg.dep_min) / (cfg.dep_max - cfg.dep_min) + 1, min=1.0, max=10.0)
+            log_d_rear = -torch.log(linear_d_rear) + 1.0
 
-            rear_dep = torch.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w),
-                                dtype=cfg.dtype, device=cfg.gpu_device)
-            rear_dep[ptn[idx_rear_d].long(), 0, y[idx_rear_d].long(), rear_x[idx_rear_d].long()] = log_d_rear
+            rear_dep = torch.zeros((bs, 1, cfg.lidfront_h, cfg.lidfront_w), dtype=cfg.dtype, device=cfg.gpu_device)
+            rear_dep[r_ptn, 0, r_y, r_x] = log_d_rear
 
         return bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep
 
@@ -401,7 +388,7 @@ def main():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_id
 
-    preproc_lidar = PreprocessingLidar(config)
+    preproc_lidar = PreprocessingLidar(config, config.use_tensor)
 
     route_list = os.listdir(config.datadir)
     route_list.sort()

@@ -216,7 +216,8 @@ class KarrDataset(Dataset):
             pty = np.array(raw_pcd.pc_data['z'])
             ptz = np.array(raw_pcd.pc_data['x'])
             ptseg = np.array(seg_pcd[:,0])
-            bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(ptx, pty, ptz, ptseg, gpu=False, config=self.config, bs=1)
+            bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(ptx, pty, ptz, ptseg, use_tensor=False, config=self.config, bs=1)
+            # bev_seg, bev_dep, front_seg, front_dep, _, _ = [1], [1], [1], [1], [1], [1] # for testing other parts
             data['bev_segs'].append(bev_seg[0])
             data['bev_deps'].append(bev_dep[0])
             data['front_segs'].append(front_seg[0])

@@ -22,7 +22,7 @@ class GlobalConfig:
     # General / device
     now = datetime.now()
     string_date = now.strftime("%d_%m_%Y-%H_%M")
-    use_gpu = True
+    use_tensor = True
     gpu_id = '0'
     gpu_device = torch.device("cuda:0")
     dtype = torch.float32
@@ -56,8 +56,8 @@ class GlobalConfig:
     # bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
     bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
     imu_harmonic_coeffs = np.array(yaml.safe_load(open(_REPO_ROOT / "common" / "imu_harmonic_coeffs.yml", "r")), dtype=float)
-    rp1_close = 6  # min distance (m) to advance to the next route point
-    route_gap_distance = 6  # in meters
+    rp1_close = 7  # min distance (m) to advance to the next route point
+    route_gap_distance = 4  # in meters
     n_buffer = 0  # moving-average buffer (seconds)
 
     # Sequence / waypoints

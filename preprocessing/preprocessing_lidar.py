@@ -22,7 +22,7 @@ class PreprocessingLidar(Preprocessing):
         self.config: GlobalConfig = config
         self.pcd = None
 
-        if self.config.use_gpu == False:
+        if self.config.use_tensor == False:
             self.grid_size = np.asarray(self.config.grid_size)
             self.max_volume_space = np.asarray(self.config.max_volume_space)
             self.min_volume_space = np.asarray(self.config.min_volume_space)
@@ -59,12 +59,12 @@ class PreprocessingLidar(Preprocessing):
             in_pcd = np.column_stack((pcd_x, pcd_y, pcd_z, pcd_i)).astype('float32')
             valid_mask = np.isfinite(in_pcd).all(axis=1)
             in_pcd = in_pcd[valid_mask]
-            if self.config.use_gpu:
+            if self.config.use_tensor:
                 in_pcd = torch.from_numpy(in_pcd).to(self.config.gpu_device, dtype=self.config.dtype)
 
             # preprocess
-            grid_ind, pt_fea = self._preproc_spherical(in_pcd, gpu=self.config.use_gpu)
-            if self.config.use_gpu == False:
+            grid_ind, pt_fea = self._preproc_spherical(in_pcd, use_tensor=self.config.use_tensor)
+            if self.config.use_tensor == False:
                 pt_fea_ten = [torch.from_numpy(i).type(torch.FloatTensor).to(self.config.gpu_device) for i in pt_fea]
                 grid_ind_ten = [torch.from_numpy(i[:, :2]).to(self.config.gpu_device) for i in grid_ind]
                 predict_labels = self.polarseg(pt_fea_ten, grid_ind_ten)
@@ -82,7 +82,7 @@ class PreprocessingLidar(Preprocessing):
                 predict_labels_np = np.expand_dims(ptseg_ten.cpu().detach().numpy(), axis=1)
                 self.predict_labels = predict_labels_np
 
-            if self.config.use_gpu == False:
+            if self.config.use_tensor == False:
                 pcd_coords = torch.tensor(in_pcd[:, :3]).to(self.config.gpu_device, dtype=self.config.dtype)
             else:
                 pcd_coords = in_pcd[:, :3]  # tensor
@@ -96,7 +96,7 @@ class PreprocessingLidar(Preprocessing):
                 pty_ten = pcd_coords[:, 1]
                 ptz_ten = pcd_coords[:, 2]
 
-            self.bev_seg, self.bev_dep, self.front_seg, self.front_dep, self.rear_seg, self.rear_dep = self.gen_bev_front_rear_seg_dep(ptx_ten, pty_ten, ptz_ten, ptseg_ten, gpu=self.config.use_gpu)
+            self.bev_seg, self.bev_dep, self.front_seg, self.front_dep, self.rear_seg, self.rear_dep = self.gen_bev_front_rear_seg_dep(ptx_ten, pty_ten, ptz_ten, ptseg_ten, use_tensor=self.config.use_tensor)
 
             self.bev_segcol = colorize_seg(self.bev_seg.cpu().detach().numpy(), self.config.SEG_CLASSES['colors'])
             self.bev_depcol = colorize_logdepth(self.bev_dep.cpu().detach().numpy())
@@ -120,8 +120,8 @@ class PreprocessingLidar(Preprocessing):
         elif as_image == True and to_file == False:
             return self.bev_segcol, self.bev_depcol, self.front_segcol, self.front_depcol, self.rear_segcol, self.rear_depcol
 
-    def _cart2polar(self, input, gpu=False):
-        if gpu == False:
+    def _cart2polar(self, input, use_tensor=False):
+        if use_tensor == False:
             rho = np.sqrt(input[:,0]**2 + input[:,1]**2)
             phi = np.arctan2(input[:,1], input[:,0])
             return np.stack((rho, phi, input[:,2]), axis=1)
@@ -130,8 +130,8 @@ class PreprocessingLidar(Preprocessing):
             phi = torch.atan2(input[:,1], input[:,0])
             return torch.stack((rho, phi, input[:,2]), dim=1)
 
-    def _preproc_spherical(self, pcd, gpu=False):
-        if gpu == False:
+    def _preproc_spherical(self, pcd, use_tensor=False):
+        if use_tensor == False:
             xyz_polar = self._cart2polar(pcd[:,:3], False)
             # normalize intensity
             sig = np.clip(np.squeeze(pcd[:,3])/self.config.max_intensity, 0.0, 1.0)
@@ -160,7 +160,7 @@ class PreprocessingLidar(Preprocessing):
             return_fea = torch.cat((return_xyz, sig[:,None]), dim=1)
             return grid_ind.long(), return_fea
 
-    def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg, gpu=False, config: GlobalConfig | None = None, bs=None):
+    def gen_bev_front_rear_seg_dep(self, ptx, pty, ptz, ptseg, use_tensor=False, config: GlobalConfig | None = None, bs=None):
         cfg: GlobalConfig = config if config is not None else self.config
         if bs == None:
             bs = cfg.bs
@@ -170,7 +170,7 @@ class PreprocessingLidar(Preprocessing):
         ptz = ptz.ravel()
         ptseg = ptseg.ravel()
 
-        if gpu == False:
+        if use_tensor == False:
             # Radial distance from LiDAR origin
             d_lidar = np.sqrt(ptx**2 + pty**2 + ptz**2)   # shape: (total_pts,)
 

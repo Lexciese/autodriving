@@ -76,7 +76,7 @@ class GlobalConfig:
     lr = 1e-4  # learning rate (AdamW)
     weight_decay = 1e-3
     # MGN (loss-weighting) parameters
-    MGN = True
+    MGN = False
     loss_weights = [1, 1, 1]  # wp, mlp steering, mlp throttle
     lw_alpha = 1.5
     bottleneck = 64  # see check_arch.py

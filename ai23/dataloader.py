@@ -7,6 +7,7 @@ from pathlib import Path
 from tqdm import tqdm
 from pypcd4 import PointCloud
 import h5py
+import hdf5plugin
 from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
@@ -91,7 +92,7 @@ class KarrDataset(Dataset):
             }
 
 
-            self.lidar_hdf5_path = path / "lidar" / "lidar.hdf5"
+            self.lidar_hdf5_path = path / "lidar" / "lidar_bev_front_seg_dep.hdf5"
             self.file_hdf5 = None
             lidar_hdf5 = h5py.File(self.lidar_hdf5_path, "a")
             frames_grp = lidar_hdf5.require_group("frames")
@@ -146,10 +147,10 @@ class KarrDataset(Dataset):
                         )
                         
                         frame_node = frames_grp.create_group(filename)
-                        frame_node.create_dataset("bev_seg", data=bev_seg, compression="gzip", chunks=True)
-                        frame_node.create_dataset("bev_dep", data=bev_dep, compression="gzip", chunks=True)
-                        frame_node.create_dataset("front_seg", data=front_seg, compression="gzip", chunks=True)
-                        frame_node.create_dataset("front_dep", data=front_dep, compression="gzip", chunks=True)
+                        frame_node.create_dataset("bev_seg", data=bev_seg, chunks=True, **hdf5plugin.Zstd(clevel=3))
+                        frame_node.create_dataset("bev_dep", data=bev_dep, chunks=True, **hdf5plugin.Zstd(clevel=3))
+                        frame_node.create_dataset("front_seg", data=front_seg, chunks=True, **hdf5plugin.Zstd(clevel=3))
+                        frame_node.create_dataset("front_dep", data=front_dep, chunks=True, **hdf5plugin.Zstd(clevel=3))
                     seq_len_idx += 1
                 sample_idx += 1
 
@@ -262,7 +263,7 @@ class KarrDataset(Dataset):
                 bev_dep   = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/bev_dep"])[:]
                 front_seg = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/front_seg"])[:]
                 front_dep = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/front_dep"])[:]
-            # bev_seg, bev_dep, front_seg, front_dep, _, _ = [1], [1], [1], [1], [1], [1] # for testing other parts
+                # bev_seg[:], bev_dep[:], front_seg[:], front_dep[:] = 0, 0, 0, 0 # for testing null
             data['bev_segs'].append(bev_seg[0])
             data['bev_deps'].append(bev_dep[0])
             data['front_segs'].append(front_seg[0])

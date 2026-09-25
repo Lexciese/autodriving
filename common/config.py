@@ -22,7 +22,7 @@ class GlobalConfig:
     # General / device
     now = datetime.now()
     string_date = now.strftime("%d_%m_%Y-%H_%M")
-    use_tensor = False
+    use_tensor = True
     gpu_id = '0'
     gpu_device = torch.device("cuda:0")
     dtype = torch.float32
@@ -32,7 +32,7 @@ class GlobalConfig:
     # Data paths
     datadir = str(_REPO_ROOT / "datasetx") + "/"
     root_dir = str(_REPO_ROOT / 'dataset' / 'dataset')
-    select_route = "ugm_baru" # "all" "ugm_baru" # ringroad
+    select_route = "ugm_baru_with_magnetometer" # "all" "ugm_baru" # ringroad
     train_dir = root_dir + '/train_routes'
     val_dir = root_dir + '/val_routes'
     test_dir = root_dir + '/test_routes'
@@ -56,6 +56,7 @@ class GlobalConfig:
     # bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
     bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
     imu_harmonic_coeffs = np.array(yaml.safe_load(open(_REPO_ROOT / "common" / "imu_harmonic_coeffs.yml", "r")), dtype=float)
+    magnetometer_calib = yaml.safe_load(open(_REPO_ROOT / "common" / "magnetometer_calib.yaml", "r"))
     rp1_close = 7  # min distance (m) to advance to the next route point
     route_gap_distance = 4  # in meters
     n_buffer = 0  # moving-average buffer (seconds)

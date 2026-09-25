@@ -25,121 +25,9 @@ def compute_imu_yaw(q, offset=0.0):
     yaw_rad = np.arctan2(-x_world[0], x_world[1])
     return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
-def get_bearing_pair(meta_dir, file_list, filtered_lats, filtered_lons):
-    imu_bearings = []
-    ref_bearings = []
-
-    prev_lat = filtered_lats[0]
-    prev_lon = filtered_lons[0]
-
-    for i in range(len(file_list)):
-        with open(os.path.join(meta_dir, file_list[i]), 'r') as f:
-            curr_meta = yaml.safe_load(f)
-
-        velocity = np.abs(curr_meta.get("velocity", 0.0))
-        curr_lat = filtered_lats[i]
-        curr_lon = filtered_lons[i]
-
-        dLat_m = (curr_lat - prev_lat) * 40008000 / 360
-        dLon_m = (curr_lon - prev_lon) * 40075000 * np.cos(np.radians(curr_lat)) / 360
-
-        # Sample bearing only when moving to ensure clean reference data
-        if np.sqrt(dLat_m**2 + dLon_m**2) >= 1.0 and velocity > 1.5:
-            ref_yaw = latlon_to_yaw(curr_lat, curr_lon, prev_lat, prev_lon)
-            raw_imu_yaw = compute_imu_yaw(curr_meta['global_orientation_xyzw'])
-
-            ref_bearings.append(ref_yaw)
-            imu_bearings.append(raw_imu_yaw)
-
-            prev_lat = curr_lat
-            prev_lon = curr_lon
-
-    return np.array(imu_bearings), np.array(ref_bearings)
-
-def build_harmonic_correction_function(meta_dir, file_list, filtered_lats, filtered_lons, n_harmonics=2):
-    imu_bearings_rad, ref_bearings_rad = get_bearing_pair(meta_dir, file_list, filtered_lats, filtered_lons)
-
-    if len(imu_bearings_rad) < 10:
-        return lambda raw_rad: raw_rad
-
-    # Calculate shortest angular error: ref - imu wrapped to [-pi, pi]
-    errors_rad = np.arctan2(
-        np.sin(ref_bearings_rad - imu_bearings_rad),
-        np.cos(ref_bearings_rad - imu_bearings_rad)
-    )
-
-    # Construct linear design matrix (basis expansion)
-    # [1, cos(theta), sin(theta), cos(2*theta), sin(2*theta), ...]
-    A = [np.ones_like(imu_bearings_rad)]
-    for k in range(1, n_harmonics + 1):
-        A.append(np.cos(k * imu_bearings_rad))
-        A.append(np.sin(k * imu_bearings_rad))
-    
-    A = np.column_stack(A)
-
-    # Solve linear least squares: A * coeffs = errors_rad
-    coeffs, _, _, _ = np.linalg.lstsq(A, errors_rad, rcond=None)
-
-    def correct_imu(imu_rad):
-        imu_arr = np.atleast_1d(imu_rad)
-        
-        # Build design matrix for test input
-        A_test = [np.ones_like(imu_arr)]
-        for k in range(1, n_harmonics + 1):
-            A_test.append(np.cos(k * imu_arr))
-            A_test.append(np.sin(k * imu_arr))
-        
-        A_test = np.column_stack(A_test)
-        
-        # Predict angular error and apply correction
-        predicted_error_rad = A_test @ coeffs
-        corrected_rad = imu_arr + predicted_error_rad
-        
-        # Wrap output back to [-pi, pi]
-        wrapped_rad = (corrected_rad + np.pi) % (2.0 * np.pi) - np.pi
-        return wrapped_rad if np.ndim(imu_rad) > 0 else wrapped_rad[0]
-
-    return correct_imu
-
-def build_lut_correction_function(meta_dir, file_list, filtered_lats, filtered_lons, n_bins=360):
-    imu_bearings, ref_bearings = get_bearing_pair(meta_dir, file_list, filtered_lats, filtered_lons)
-
-    if len(imu_bearings) < 10:
-        return lambda raw_rad: raw_rad
-
-    imu_deg = np.degrees(np.array(imu_bearings))
-    ref_deg = np.degrees(np.array(ref_bearings))
-
-    # Calculate shortest angular error: ref - imu
-    errors_deg = np.degrees(np.arctan2(np.sin(np.radians(ref_deg - imu_deg)), 
-                                       np.cos(np.radians(ref_deg - imu_deg))))
-
-    # Bin error across -180 to 180 degrees
-    bin_edges = np.linspace(-180, 180, n_bins + 1)
-    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-
-    binned_errors = []
-    for i in range(n_bins):
-        mask = (imu_deg >= bin_edges[i]) & (imu_deg < bin_edges[i+1])
-        if np.any(mask):
-            binned_errors.append(np.median(errors_deg[mask]))
-        else:
-            binned_errors.append(np.nan)
-
-    # Fill unmeasured bins via linear interpolation and boundary padding
-    s_err = pd.Series(binned_errors).interpolate(method='linear').bfill().ffill()
-    lut_errors_deg = s_err.to_numpy()
-
-    def correct_imu_bearing_lut(raw_imu_rad):
-        imu_d = np.degrees(raw_imu_rad)
-        # Interpolate error dynamically with 360 degree periodicity
-        corr_error_d = np.interp(imu_d, bin_centers, lut_errors_deg, period=360.0)
-        corrected_d = imu_d + corr_error_d
-        corrected_rad = np.radians(corrected_d)
-        return (corrected_rad + np.pi) % (2.0 * np.pi) - np.pi
-
-    return correct_imu_bearing_lut
-
+def mag_to_yaw(mx, my, offset=0.0):
+    yaw = np.arctan2(-my, mx)
+    return ((yaw + offset) + np.pi) % (2.0 * np.pi) - np.pi
 
 # PID Controller
 turn_controller = PIDController(K_P=0.5, K_I=0.25, K_D=0.15, n=15)
@@ -151,9 +39,12 @@ configx = GlobalConfig()
 # Loop pada semua route
 route_list = os.listdir(configx.datadir)
 route_list.sort()
+if configx.select_route != "all":
+    route_list = [configx.select_route]
+    print(f"only route: {configx.select_route} is selected")
 for route in route_list:
-    if os.path.isfile(configx.datadir + route):  # skip file
-        continue
+    # if os.path.isfile(configx.datadir + route):  # skip file
+    #     continue
     print(route)
 
     latlon_buffer = {
@@ -165,6 +56,7 @@ for route in route_list:
         'sin': deque(maxlen=5),
         'cos': deque(maxlen=5)
     }
+
     # Paths
     ddir_meta = configx.datadir + route + "/meta/"
     ddir_rgb_front = configx.datadir + route + "/camera/rgb/"
@@ -177,7 +69,7 @@ for route in route_list:
 
     join_img_folder = configx.datadir + route + "/join_img/all_img/"
     os.makedirs(join_img_folder, exist_ok=True)
-    if Path(configx.datadir + route + "/join_img/" + route + ".avi").exists():
+    if Path(configx.datadir + route + "/join_img/" + "ugm_baru_with_magnetometer" + ".avi").exists():
         print(f"{join_img_folder} is already generated")
         continue
 
@@ -190,46 +82,13 @@ for route in route_list:
     file_list = os.listdir(ddir_meta)
     file_list.sort()
 
-    # Pre-extract raw coordinates across entire route
-    all_raw_lats = []
-    all_raw_lons = []
-    for f_name in file_list:
-        with open(ddir_meta + f_name, 'r') as f_meta:
-            m_data = yaml.safe_load(f_meta)
-            all_raw_lats.append(m_data['global_position_latlon'][0])
-            all_raw_lons.append(m_data['global_position_latlon'][1])
-
-    # Run Hampel Filter across the full sequence first
-    s_lats = pd.Series(all_raw_lats)
-    s_lons = pd.Series(all_raw_lons)
-    
-    # Apply Hampel outlier removal to series
-    med_lats = s_lats.rolling(window=5, min_periods=1, center=True).median()
-    mad_lats = (s_lats - med_lats).abs().rolling(window=5, min_periods=1, center=True).median()
-    outliers_lats = (s_lats - med_lats).abs() > (3.0 * 1.4826 * mad_lats)
-    filtered_lats = s_lats.copy()
-    filtered_lats[outliers_lats] = med_lats[outliers_lats]
-
-    med_lons = s_lons.rolling(window=5, min_periods=1, center=True).median()
-    mad_lons = (s_lons - med_lons).abs().rolling(window=5, min_periods=1, center=True).median()
-    outliers_lons = (s_lons - med_lons).abs() > (3.0 * 1.4826 * mad_lons)
-    filtered_lons = s_lons.copy()
-    filtered_lons[outliers_lons] = med_lons[outliers_lons]
-
-    filtered_lats = filtered_lats.tolist()
-    filtered_lons = filtered_lons.tolist()
-
-    # Construct LUT for IMU Bearing Correction using Hampel-filtered coordinates
-    correct_imu_lut = build_lut_correction_function(
-        ddir_meta, file_list, filtered_lats, filtered_lons, n_bins=360
-    )
-
     out_video = None
 
     seq_len = configx.seq_len
     pred_len = configx.pred_len
     data_rate = configx.hz
     len_files = len(file_list)
+
     # Loop frames
     for current_idx in tqdm(range((seq_len - 1), (len_files - pred_len * data_rate)), "Generating Frames", len(file_list)):
         filenum = file_list[current_idx][:-4]
@@ -269,18 +128,31 @@ for route in route_list:
         # Calculate raw IMU bearing
         q = curr_meta['global_orientation_xyzw']
         raw_imu_bearing = compute_imu_yaw(q)
-        
-        # Apply LUT Correction to raw IMU bearing
-        corrected_imu_bearing = correct_imu_lut(raw_imu_bearing)
 
-        velocity_ms = curr_meta['velocity']
-        velocity_kmh = velocity_ms * 3.6
+        x0, y0 = configx.magnetometer_calib["offset"]
+        Q = np.array(configx.magnetometer_calib["Q"])
+        scale = 1e6
+        raw_mag = curr_meta['magnetic_field']
+        # Apply Offset and Soft-Iron Q Matrix
+        x_body = raw_mag[0] * scale # Forward (+X)
+        y_body = raw_mag[2] * scale # Left (+Y)
+        z_body = raw_mag[1] * scale # Up (+Z)
+        mags_offset = np.column_stack([x_body - x0, y_body - y0])
+        mags_calibrated_xy = mags_offset @ Q.T
+        x_cal = mags_calibrated_xy[:, 0]
+        y_cal = mags_calibrated_xy[:, 1]
+        z_cal = z_body - np.mean(z_body)
+        raw_magnetometer_bearing = mag_to_yaw(x_cal, y_cal)[0]
 
-        bearing_est = "IMU (LUT)"
-        raw_bearing_veh = corrected_imu_bearing
+
+        bearing_est = "Mag (Calibrated)"
+        raw_bearing_veh = raw_magnetometer_bearing
 
         bearing_veh = bearing_filter(raw_bearing_veh, bearing_buffer)
         bearing_veh_deg = np.degrees(bearing_veh)
+
+        velocity_ms = curr_meta['velocity']
+        velocity_kmh = velocity_ms * 3.6
 
         # Compute global to local transformation
         rp_sdc_frame = []
@@ -420,7 +292,7 @@ for route in route_list:
             (f"Bearing: {format(np.round(bearing_veh_deg, 3), '.3f')} ({bearing_est})", ""),
             (f"Latlon Bearing: {format(np.round(np.degrees(latlon_bearing), 3), '.3f')}", ""),
             (f"Raw IMU Bearing: {format(np.round(np.degrees(raw_imu_bearing), 3), '.3f')}", ""),
-            (f"LUT IMU Bearing: {format(np.round(np.degrees(corrected_imu_bearing), 3), '.3f')}", ""),
+            (f"Calibrated Mag Bearing: {format(np.round(np.degrees(raw_magnetometer_bearing), 3), '.3f')}", ""),
             (f"Robot Lat: {format(np.round(veh_curr_lat, 6), '.6f')}", ""),
             (f"Robot Lon: {format(np.round(veh_curr_lon, 6), '.6f')}", ""),
             (f"Rp1 Lat: {format(np.round(rp_list['route_point']['latitude'][0], 6), '.6f')}", ""),

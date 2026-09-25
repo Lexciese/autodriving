@@ -27,6 +27,7 @@ TOPICS = [
     '/gnss/fix_velocity',
     '/zed/zed_node/odom',
     '/imu',
+    '/magnetometer',
     '/zed/zed_node/rgb/image_rect_color',
     '/zed/zed_node/point_cloud/cloud_registered',
     '/zed/zed_node/depth/depth_registered',
@@ -142,7 +143,11 @@ def save(sync_data):
                               sync_data['/imu'].angular_velocity.z],
         'acceleration_xyz': [sync_data['/imu'].linear_acceleration.x,
                              sync_data['/imu'].linear_acceleration.y,
-                             sync_data['/imu'].linear_acceleration.z]
+                             sync_data['/imu'].linear_acceleration.z],
+        'magnetic_field': [sync_data['/magnetometer'].magnetic_field.x,
+                           sync_data['/magnetometer'].magnetic_field.y,
+                           sync_data['/magnetometer'].magnetic_field.z],
+        'magnetic_field_covariance': [float(x) for x in sync_data['/magnetometer'].magnetic_field_covariance]
     }
     with open(dirs['meta'] + fname + ".yml", 'w') as f:
         yaml.dump(meta, f)

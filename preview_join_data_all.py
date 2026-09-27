@@ -2,9 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import cv2
 from PIL import Image, ImageDraw, ImageFont
-import os
 import yaml
-from pathlib import Path
 from tqdm import tqdm
 import pandas as pd
 
@@ -33,14 +31,11 @@ from config import GlobalConfig
 configx = GlobalConfig()
 
 # Loop pada semua route
-route_list = os.listdir(configx.datadir)
-route_list.sort()
+route_list = sorted(p.name for p in configx.datadir.iterdir() if p.is_dir())
 if configx.select_route != "all":
     route_list = [configx.select_route]
     print(f"only route: {configx.select_route} is selected")
 for route in route_list:
-    # if os.path.isfile(configx.datadir + route):  # skip file
-    #     continue
     print(route)
 
     latlon_buffer = {
@@ -54,29 +49,29 @@ for route in route_list:
     }
 
     # Paths
-    ddir_meta = configx.datadir + route + "/meta/"
-    ddir_rgb_front = configx.datadir + route + "/camera/rgb/"
+    route_path = configx.datadir / route
+    ddir_meta = route_path / "meta"
+    ddir_rgb_front = route_path / "camera" / "rgb"
 
-    ddir_lidar = configx.datadir + route + "/lidar/img/"
-    ddir_lidseg_bev = ddir_lidar + "bev_seg/"
-    ddir_lidseg_fro = ddir_lidar + "front_seg/"
-    ddir_liddep_bev = ddir_lidar + "bev_dep/"
-    ddir_liddep_fro = ddir_lidar + "front_dep/"
+    ddir_lidar = route_path / "lidar" / "img"
+    ddir_lidseg_bev = ddir_lidar / "bev_seg"
+    ddir_lidseg_fro = ddir_lidar / "front_seg"
+    ddir_liddep_bev = ddir_lidar / "bev_dep"
+    ddir_liddep_fro = ddir_lidar / "front_dep"
 
-    join_img_folder = configx.datadir + route + "/join_img/all_img/"
-    os.makedirs(join_img_folder, exist_ok=True)
-    if Path(configx.datadir + route + "/join_img/" + "ugm_baru_with_magnetometer" + ".avi").exists():
+    join_img_folder = route_path / "join_img" / "all_img"
+    join_img_folder.mkdir(parents=True, exist_ok=True)
+    if (route_path / "join_img" / f"{route}.avi").exists():
         print(f"{join_img_folder} is already generated")
         continue
 
     # Load route points
-    with open(configx.datadir + route + "/" + route + "_routepoint_list.yml", 'r') as rp_listx:
+    with open(route_path / f"{route}_routepoint_list.yml", 'r') as rp_listx:
         rp_list = yaml.safe_load(rp_listx)
         rp_list['route_point']['latitude'].append(rp_list['last_point']['latitude'])
         rp_list['route_point']['longitude'].append(rp_list['last_point']['longitude'])
 
-    file_list = os.listdir(ddir_meta)
-    file_list.sort()
+    file_list = sorted(p.name for p in ddir_meta.iterdir())
 
     out_video = None
 
@@ -90,7 +85,7 @@ for route in route_list:
         filenum = file_list[current_idx][:-4]
 
         # Global coordinate to local coordinate for next route
-        with open(ddir_meta + filenum + ".yml", 'r') as curr_metafile:
+        with open(ddir_meta / f"{filenum}.yml", 'r') as curr_metafile:
             curr_meta = yaml.safe_load(curr_metafile)
         velocity = np.abs(curr_meta["velocity"])
 
@@ -107,7 +102,7 @@ for route in route_list:
             veh_prev_lon = latlon_buffer['lon_buf'][prev_offset]
         else:
             prev_idx = max(0, current_idx - configx.gap_bearing)
-            with open(ddir_meta + file_list[prev_idx], 'r') as prev_metafile:
+            with open(ddir_meta / file_list[prev_idx], 'r') as prev_metafile:
                 prev_meta = yaml.safe_load(prev_metafile)
             veh_prev_lat = prev_meta['global_position_latlon'][0]
             veh_prev_lon = prev_meta['global_position_latlon'][1]
@@ -211,7 +206,7 @@ for route in route_list:
         
         for future_idx in future_indices:
             file_name_next = file_list[future_idx]
-            with open(ddir_meta + file_name_next[:-4] + ".yml", 'r') as next_metafile:
+            with open(ddir_meta / f"{file_name_next[:-4]}.yml", 'r') as next_metafile:
                 next_meta = yaml.safe_load(next_metafile)
                 _, _, seq_theta = euler_from_quaternion(
                     w=next_meta['local_orientation_xyzw'][3],
@@ -246,11 +241,11 @@ for route in route_list:
         steering, throttle, brake = pid_control(wp_local, velocity_ms, turn_controller, speed_controller)
 
         # Load raw sensor frames
-        lidar_bev_segcol = cv2.imread(ddir_lidseg_bev + filenum + ".png")       # 256x256
-        lidar_bev_depcol = cv2.imread(ddir_liddep_bev + filenum + ".png")       # 256x256
-        lidar_front_segcol = cv2.imread(ddir_lidseg_fro + filenum + ".png")     # 512x64
-        lidar_front_depcol = cv2.imread(ddir_liddep_fro + filenum + ".png")     # 512x64
-        rgb_front = cv2.imread(ddir_rgb_front + filenum + ".png")               # 1280x720
+        lidar_bev_segcol = cv2.imread(str(ddir_lidseg_bev / f"{filenum}.png"))       # 256x256
+        lidar_bev_depcol = cv2.imread(str(ddir_liddep_bev / f"{filenum}.png"))       # 256x256
+        lidar_front_segcol = cv2.imread(str(ddir_lidseg_fro / f"{filenum}.png"))     # 512x64
+        lidar_front_depcol = cv2.imread(str(ddir_liddep_fro / f"{filenum}.png"))     # 512x64
+        rgb_front = cv2.imread(str(ddir_rgb_front / f"{filenum}.png"))               # 1280x720
 
         # Plot route points and waypoints on segmentation images
         lidar_bev_segcol_wprp = lidar_bev_segcol.copy()
@@ -335,13 +330,13 @@ for route in route_list:
 
         if out_video is None:
             out_video = cv2.VideoWriter(
-                configx.datadir + route + '/join_img/' + route + '.avi',
+                route_path / 'join_img' / f'{route}.avi',
                 cv2.VideoWriter_fourcc(*'DIVX'),
                 configx.fps,
                 (final_img.shape[1], final_img.shape[0])
             )
 
-        cv2.imwrite(join_img_folder+filenum+".jpg", final_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.imwrite(str(join_img_folder / f"{filenum}.jpg"), final_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
         out_video.write(np.uint8(final_img))
 
     if out_video is not None:

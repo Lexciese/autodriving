@@ -1,12 +1,13 @@
-import os
 import yaml
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from pathlib import Path
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation as R
 import plotly.graph_objects as go
+from config import GlobalConfig
+
+config = GlobalConfig()
 
 # projects into NWU system
 def imu_to_yaw(q, offset=0.0):
@@ -123,9 +124,11 @@ def compute_calibration_matrix(ap, bp, phi):
 
 
 def main():
-    dataset_path = Path("/media/mf/SATA4TB/autodriving/datasetx/ugm_baru_with_magnetometer")
+    if config.select_route == "all":
+        raise ValueError("check_magnetometer.py requires a single select_route, not 'all'")
+    dataset_path = config.datadir / config.select_route
     meta_path = dataset_path / "meta"
-    file_list = sorted(os.listdir(meta_path))
+    file_list = sorted(p.name for p in meta_path.iterdir())
 
     meta = [yaml.safe_load(open(meta_path / f, "r"))
             for f in tqdm(file_list, desc="Loading YAMLs")]
@@ -193,7 +196,8 @@ def main():
     calibration_file["Q"] = Q.tolist()
     calibration_file["semi_major_minor"] = [float(ap), float(bp)]
     calibration_file["ellipse_angle_rad"] = float(phi)
-    with open('magnetometer_calib.yaml', 'w') as file:
+    calib_path = config.datadir.parent / "common" / "magnetometer_calib.yaml"
+    with open(calib_path, 'w') as file:
         yaml.safe_dump(calibration_file, file)
 
     # Apply Offset and Soft-Iron Q Matrix

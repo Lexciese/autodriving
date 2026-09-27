@@ -1,14 +1,15 @@
 import yaml
 import plotly.graph_objects as go
-from pathlib import Path
+from config import GlobalConfig
 
-dataset_path = Path('../datasetx')
+config = GlobalConfig()
 
-# subfolders = [p for p in dataset_path.glob('*') if p.is_dir() and (p / 'meta').exists()]
-subfolders = ["/media/mf/SATA4TB/autodriving/datasetx/ringroad/"]
+subfolders = sorted(p for p in config.datadir.iterdir() if p.is_dir() and (p / 'meta').exists())
+if config.select_route != "all":
+    subfolders = [config.datadir / config.select_route]
+    print(f"only route: {config.select_route} is selected")
 
 for subfolder in subfolders:
-    subfolder = Path(subfolder)
     lats, lons, labels = [], [], []
     yml_files = sorted((subfolder / 'meta').glob('*.yml'))
 

@@ -1,11 +1,9 @@
 import yaml
-import os
 import pandas as pd
 from collections import OrderedDict
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import deque
-from pathlib import Path
 from tqdm import tqdm
 from config import GlobalConfig
 configx = GlobalConfig()
@@ -26,8 +24,7 @@ def hampel_filter(data, window_size=3, n_sigmas=3.0):
 #persoalan QT plugins baca: https://github.com/NVlabs/instant-ngp/discussions/300
 
 #loop pada semua route
-route_list = os.listdir(configx.datadir)
-route_list.sort()
+route_list = sorted(p.name for p in configx.datadir.iterdir() if p.is_dir())
 if configx.select_route != "all":
     route_list = [configx.select_route]
     print(f"only route: {configx.select_route} is selected")
@@ -35,19 +32,17 @@ if configx.select_route != "all":
 for route in route_list:
     # if route in route_listx: #kalau termasuk route yang tidak diproses, skip
     #     continue
-    if os.path.isfile(configx.datadir+route):  #kalau dia file, maka skip
-        continue
+    route_path = configx.datadir / route
 
-    ddir_meta = configx.datadir+route+"/meta/"
-    file_list = os.listdir(ddir_meta)
-    file_list.sort()
+    ddir_meta = route_path / "meta"
+    file_list = sorted(p.name for p in ddir_meta.iterdir())
 
     #ngecek
     #file_list = file_list[2001:2500]
 
     #EKSEKUSI PLOT BEARING GPS vs IMU
 
-    meta = [yaml.safe_load(open(ddir_meta+meta_file, "r")) for meta_file in file_list]
+    meta = [yaml.safe_load(open(ddir_meta / meta_file, "r")) for meta_file in file_list]
     #print(meta)
 
     # Moving Average Filter to remove GNSS outliers from metadata list
@@ -79,7 +74,7 @@ for route in route_list:
     plt.ylabel('Latitude (deg)')
     plt.grid()
     plt.legend()
-    plt.savefig(configx.datadir+route+"/"+route+"_bearing_viz.png", bbox_inches='tight', dpi=300)
+    plt.savefig(route_path / f"{route}_bearing_viz.png", bbox_inches='tight', dpi=300)
     plt.close()
 
 
@@ -101,9 +96,9 @@ for route in route_list:
     ])
 
     #cek MAF dan renormalize dari -180 - 180 ke 0 - 360
-    with open(ddir_meta+file_list[0], 'r') as first_filexx:
+    with open(ddir_meta / file_list[0], 'r') as first_filexx:
         first_filex = yaml.safe_load(first_filexx)
-    with open(ddir_meta+file_list[-1], 'r') as last_filexx:
+    with open(ddir_meta / file_list[-1], 'r') as last_filexx:
         last_filex = yaml.safe_load(last_filexx)
     sin_angle_buff = deque()
 
@@ -147,7 +142,7 @@ for route in route_list:
         file_name = file_list[i]
         # print(ddir_meta+file_name)
 
-        with open(ddir_meta+file_name, 'r') as curr_metafile:
+        with open(ddir_meta / file_name, 'r') as curr_metafile:
             curr_meta = yaml.safe_load(curr_metafile)
 
         # Apply smoothed GNSS coordinates
@@ -202,16 +197,16 @@ for route in route_list:
         else:
             euler_log['ekf_y_maf'].append(0)
 
-    pd.DataFrame(euler_log).to_csv(configx.datadir+route+"/"+route+"_ahrs_rec.csv", index=False)
+    pd.DataFrame(euler_log).to_csv(route_path / f"{route}_ahrs_rec.csv", index=False)
 
     #save routepoints ke yaml
-    with open(configx.datadir+route+"/"+route+"_routepoint_list.yml", 'w') as c:
+    with open(route_path / f"{route}_routepoint_list.yml", 'w') as c:
         yaml.dump(routes, c)
 
     gnss_lat = [m['global_position_latlon'][0] for m in meta]
     gnss_lon = [m['global_position_latlon'][1] for m in meta]
     gnss_df = pd.DataFrame({'latitude': gnss_lat, 'longitude': gnss_lon})
-    gnss_df.to_csv(configx.datadir+route+"/"+route+"_gnss.csv", index=False)
+    gnss_df.to_csv(route_path / f"{route}_gnss.csv", index=False)
 
     plt.grid(linestyle='--')
     plt.gca().set_aspect('equal', adjustable='box')
@@ -228,7 +223,7 @@ for route in route_list:
     plt.ylabel('Latitude (deg)')
     plt.title("Route Points")
     plt.legend(loc='lower right')
-    plt.savefig(configx.datadir+route+"/"+route+"_routepoint_viz.png", bbox_inches='tight', dpi=300)
+    plt.savefig(route_path / f"{route}_routepoint_viz.png", bbox_inches='tight', dpi=300)
     plt.close()
 
     #plot ahrs, orientasi terhadap utara, angle yaw
@@ -246,5 +241,5 @@ for route in route_list:
     plt.xlabel('Time Step (@'+str(configx.hz)+' Hz)')
     plt.ylabel('Euler Angle (deg)')
     plt.legend(loc='lower right')
-    plt.savefig(configx.datadir+route+"/"+route+"_ahrs_viz.png", bbox_inches='tight', dpi=300)
+    plt.savefig(route_path / f"{route}_ahrs_viz.png", bbox_inches='tight', dpi=300)
     plt.close()

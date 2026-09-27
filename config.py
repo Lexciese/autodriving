@@ -219,5 +219,5 @@ def select_logdir(log_root=None):
     while True:
         choice = input(f"Select log run [1-{len(runs)}]: ").strip()
         if choice.isdigit() and 1 <= int(choice) <= len(runs):
-            return str(runs[int(choice) - 1])
+            return runs[int(choice) - 1]
         print("Invalid selection, please try again.")

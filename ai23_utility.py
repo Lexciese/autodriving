@@ -183,7 +183,7 @@ def check_gt_seg(config: GlobalConfig, gt_seg):
 
     #GANTI ORDER BGR KE RGB, SWAP!
     imgx = swap_RGB2BGR(imgx)
-    cv2.imwrite(config.logdir+"/check_gt_seg.png", imgx) #cetak gt segmentation
+    cv2.imwrite(str(config.logdir / "check_gt_seg.png"), imgx) #cetak gt segmentation
 
 
 #Class untuk penyimpanan dan perhitungan update loss

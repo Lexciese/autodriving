@@ -100,4 +100,11 @@ def plot_yaml_route(file_path: str | Path, output_html: str = "route_plot.html")
 
 
 # Usage example:
-plot_yaml_route("/media/mf/SATA4TB/autodriving/datasetx/ringroad/ringroad_routepoint_list.yml", output_html="ringroad_routepoint_list.html")
+if __name__ == "__main__":
+    from config import GlobalConfig
+
+    config = GlobalConfig()
+    if config.select_route == "all":
+        raise ValueError("check_routepoint.py requires a single select_route, not 'all'")
+    route_file = config.datadir / config.select_route / f"{config.select_route}_routepoint_list.yml"
+    plot_yaml_route(route_file, output_html=f"{config.select_route}_routepoint_list.html")

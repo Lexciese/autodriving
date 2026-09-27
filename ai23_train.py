@@ -16,7 +16,7 @@ import shutil
 from ai23_model import xr20
 from ai23_dataloader import KarrDataset
 from config import GlobalConfig
-import config
+import config as config_module
 
 
 # Class untuk penyimpanan dan perhitungan update loss
@@ -273,9 +273,9 @@ def main():
 
     print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {test_len}")
 
-    if not os.path.exists(config.logdir + "/trainval_log.csv"):
+    if not (config.logdir / "trainval_log.csv").exists():
         print('TRAIN from the beginning!!!!!!!!!!!!!!!!')
-        os.makedirs(config.logdir, exist_ok=True)
+        config.logdir.mkdir(parents=True, exist_ok=True)
         print('Created dir:', config.logdir)
 
         # Initial loss weights (single task for waypoints)
@@ -287,24 +287,24 @@ def main():
     else:
         print('Continue training!!!!!!!!!!!!!!!!')
         print('Loading checkpoint from ' + config.logdir)
-        log_trainval = pd.read_csv(config.logdir + "/trainval_log.csv")
+        log_trainval = pd.read_csv(config.logdir / "trainval_log.csv")
         curr_ep = int(log_trainval['epoch'][-1:]) + 1
         lowest_score = float(np.min(log_trainval['val_loss']))
         stop_count = int(log_trainval['stop_counter'][-1:])
 
-        model.load_state_dict(torch.load(os.path.join(config.logdir, 'recent_model.pth')))
-        optima.load_state_dict(torch.load(os.path.join(config.logdir, 'recent_optim.pth')))
+        model.load_state_dict(torch.load(config.logdir / 'recent_model.pth'))
+        optima.load_state_dict(torch.load(config.logdir / 'recent_optim.pth'))
 
         latest_lw = [float(log_trainval['lw_wp'][-1:])]
         params_lw = [torch.cuda.FloatTensor([latest_lw[0]]).clone().detach().requires_grad_(True)]
         optima_lw = optim.SGD(params_lw, lr=float(log_trainval['lrate'][-1:]))
 
-        config.logdir += "/retrain"
-        os.makedirs(config.logdir, exist_ok=True)
+        config.logdir = config.logdir / "retrain"
+        config.logdir.mkdir(parents=True, exist_ok=True)
         print('Created new retrain dir:', config.logdir)
 
-    config_file_path = config.__file__
-    shutil.copyfile(config_file_path, os.path.join(config.logdir, 'config.py'))
+    config_file_path = config_module.__file__
+    shutil.copyfile(config_file_path, config.logdir / 'config.py')
 
     log = OrderedDict([
         ('epoch', []),
@@ -361,14 +361,14 @@ def main():
         print('| v_total_l: %.4f | v_wp_l: %.4f |' % (val_log['v_total_l'], val_log['v_wp_l']))
         print('elapsed time: %.4f sec' % (elapsed_time))
 
-        torch.save(model.state_dict(), os.path.join(config.logdir, 'recent_model.pth'))
-        torch.save(optima.state_dict(), os.path.join(config.logdir, 'recent_optim.pth'))
+        torch.save(model.state_dict(), config.logdir / 'recent_model.pth')
+        torch.save(optima.state_dict(), config.logdir / 'recent_optim.pth')
 
         if val_log['v_total_l'] < lowest_score:
             print("v_total_l: %.4f < lowest sebelumnya: %.4f" % (val_log['v_total_l'], lowest_score))
             print("model terbaik disave!")
-            torch.save(model.state_dict(), os.path.join(config.logdir, 'best_model.pth'))
-            torch.save(optima.state_dict(), os.path.join(config.logdir, 'best_optim.pth'))
+            torch.save(model.state_dict(), config.logdir / 'best_model.pth')
+            torch.save(optima.state_dict(), config.logdir / 'best_optim.pth')
             lowest_score = val_log['v_total_l']
             stop_count = config.init_stop_counter
             print("stop counter direset ke: ", stop_count)
@@ -381,7 +381,7 @@ def main():
             log['best_model'].append("")
 
         log['stop_counter'].append(stop_count)
-        pd.DataFrame(log).to_csv(os.path.join(config.logdir, 'trainval_log.csv'), index=False)
+        pd.DataFrame(log).to_csv(config.logdir / 'trainval_log.csv', index=False)
 
         torch.cuda.empty_cache()
         epoch += 1

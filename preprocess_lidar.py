@@ -414,9 +414,9 @@ def main():
     torch.backends.cudnn.benchmark = True
 
     pipeline = GenerateLidSegDep(config)
-    routes = sorted([p for p in Path(config.datadir).iterdir() if p.is_dir()])
+    routes = sorted([p for p in config.datadir.iterdir() if p.is_dir()])
     if config.select_route != "all":
-        routes = sorted([Path(p) for p in config.select_route])
+        routes = [config.datadir / config.select_route]
         print(f"only route: {config.select_route} is selected")
 
     for route in routes:

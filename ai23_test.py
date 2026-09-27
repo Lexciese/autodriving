@@ -7,7 +7,6 @@ import numpy as np
 import cv2
 from torch import torch
 import yaml
-from pathlib import Path
 
 from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
@@ -48,10 +47,9 @@ def test(data_loader, model, config: GlobalConfig):
     ])
     batch_ke = 1
 
-    save_dir = config.logdir + "/offline_test/"
-    os.makedirs(save_dir, exist_ok=True)
+    save_dir = config.logdir / "offline_test"
+    save_dir.mkdir(parents=True, exist_ok=True)
     save_dir_log = save_dir
-    os.makedirs(save_dir_log, exist_ok=True)
 
     model.eval()
 
@@ -101,11 +99,11 @@ def test(data_loader, model, config: GlobalConfig):
             log['test_metric'].append(total_metric)
             log['test_wp_metric'].append(metric_wp.item())
             log['model_elapsed_time'].append(model_elapsed_time)
-            pd.DataFrame(log).to_csv(save_dir_log+'/test_log.csv', index=False)
+            pd.DataFrame(log).to_csv(save_dir_log / 'test_log.csv', index=False)
 
             #save metadata prediksi
-            save_dir_meta = save_dir+'/pred_meta/'
-            os.makedirs(save_dir_meta, exist_ok=True)
+            save_dir_meta = save_dir / 'pred_meta'
+            save_dir_meta.mkdir(parents=True, exist_ok=True)
             #isikan beberapa data
             meta_pred = {}
             meta_pred['rp1_pos_local'] = rp1[0].cpu().detach().numpy().tolist()
@@ -117,7 +115,7 @@ def test(data_loader, model, config: GlobalConfig):
             meta_pred['model_fps'] = float(1/model_elapsed_time)
             elapsed_time = time.time() - start_time #hitung elapsedtime
             meta_pred['fps'] = float(1/elapsed_time)
-            with open(save_dir_meta+data['filename'][-1]+".yml", 'w') as dict_file:
+            with open(save_dir_meta / f"{data['filename'][-1]}.yml", 'w') as dict_file:
                 yaml.dump(meta_pred, dict_file)
 
             batch_ke += 1
@@ -138,7 +136,7 @@ def test(data_loader, model, config: GlobalConfig):
         log['model_elapsed_time'].append(np.std(log['model_elapsed_time'][:-1]))
 
         #paste ke csv file
-        pd.DataFrame(log).to_csv(save_dir_log+'/test_log.csv', index=False)
+        pd.DataFrame(log).to_csv(save_dir_log / 'test_log.csv', index=False)
 
     return log
 
@@ -149,7 +147,7 @@ def main():
 
     # Load config from the selected log run
     logdir = select_logdir()
-    config_path = os.path.join(logdir, "config.py")
+    config_path = logdir / "config.py"
     spec = importlib.util.spec_from_file_location("config", config_path)
     log_config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(log_config)
@@ -165,7 +163,7 @@ def main():
     #IMPORT MODEL dan load bobot
     print("IMPORT ARSITEKTUR DL DAN COMPILE")
     model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
-    model.load_state_dict(torch.load(os.path.join(config.logdir, 'best_model.pth')))
+    model.load_state_dict(torch.load(config.logdir / 'best_model.pth'))
 
     karr_dataset = KarrDataset(config=config)
     total_len = len(karr_dataset) - 3161

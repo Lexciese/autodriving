@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 from config import GlobalConfig
 configx = GlobalConfig()
 
@@ -10,26 +9,28 @@ night = True
 
 
 #loop pada semua route
-route_list = os.listdir(configx.datadir)
-route_list.sort()
+route_list = sorted(p.name for p in configx.datadir.iterdir() if p.is_dir())
+if configx.select_route != "all":
+    route_list = [configx.select_route]
+    print(f"only route: {configx.select_route} is selected")
 for route in route_list:
-    img_dir = configx.datadir+route+"/camera/rgb/"
-    save_dir = configx.datadir+route+"/camera/histogram/"
-    ##save_dir_opt = configx.datadir+route+"/camera/optical_flow/"
-    os.makedirs(save_dir, exist_ok=True)
-    #os.makedirs(save_dir_opt, exist_ok=True)
+    route_path = configx.datadir / route
+    img_dir = route_path / "camera" / "rgb"
+    save_dir = route_path / "camera" / "histogram"
+    ##save_dir_opt = route_path / "camera" / "optical_flow"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    #save_dir_opt.mkdir(parents=True, exist_ok=True)
 
-    rgb_images = os.listdir(img_dir)
-    rgb_images.sort()
+    rgb_images = sorted(p.name for p in img_dir.iterdir())
 
-    first_image = cv2.imread(img_dir+rgb_images[0])
+    first_image = cv2.imread(str(img_dir / rgb_images[0]))
     prvs = cv2.cvtColor(first_image, cv2.COLOR_BGR2GRAY)
     hsv = np.zeros_like(first_image)
     hsv[..., 1] = 255
 
     for img in rgb_images:
-        print(img_dir+img)
-        image = cv2.imread(img_dir+img)
+        print(img_dir / img)
+        image = cv2.imread(str(img_dir / img))
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         """
@@ -74,7 +75,7 @@ for route in route_list:
         plt.yticks(np.arange(0, 21, 5))
         plt.tight_layout()
         # plt.show()
-        plt.savefig(save_dir+img)
+        plt.savefig(save_dir / img)
         """
 
         # Create a figure and axes
@@ -110,5 +111,5 @@ for route in route_list:
 
 
 
-        fig.savefig(save_dir+img, dpi=100)
+        fig.savefig(save_dir / img, dpi=100)
 

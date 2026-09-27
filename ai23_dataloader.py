@@ -1,5 +1,4 @@
 from typing import cast
-import os
 import cv2
 import yaml
 import numpy as np
@@ -63,8 +62,7 @@ class KarrDataset(Dataset):
             "velocity": []
         }
 
-        self.route_list = os.listdir(config.datadir)
-        self.route_list.sort()
+        self.route_list = sorted(p.name for p in config.datadir.iterdir() if p.is_dir())
 
         if self.config.select_route != "all":
             self.route_list = [self.config.select_route]
@@ -72,7 +70,7 @@ class KarrDataset(Dataset):
 
         sample_idx = 0
         for route in self.route_list:
-            path = Path(f"{self.config.datadir}/{route}")
+            path = self.config.datadir / route
             self.dir_meta      = path / "meta"             # .yml
             self.dir_rgb       = path / "camera" / "rgb"   # .png
             self.dir_raw_pcd   = path / "lidar" / "cld"    # .pcd
@@ -96,15 +94,13 @@ class KarrDataset(Dataset):
             lidar_hdf5 = h5py.File(self.lidar_hdf5_path, "a")
             frames_grp = lidar_hdf5.require_group("frames")
 
-            preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}_w{latlon_buffer['window_size']}.npy"
-            if os.path.exists(preload_path):
+            preload_path = path / f"seq{str(self.seq_len)}_pred{self.pred_len}_w{latlon_buffer['window_size']}.npy"
+            if preload_path.exists():
                 self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)
                 return
 
-            self.files = os.listdir(self.dir_meta)
-            self.files.sort()
-            self.files = [os.path.splitext(filename)[0] for filename in self.files] # remove extension string
+            self.files = sorted(p.stem for p in self.dir_meta.glob("*.yml"))
             self.len_files = len(self.files)
 
             with open(path / f"{route}_routepoint_list.yml", "r") as rp_listx:
@@ -129,13 +125,13 @@ class KarrDataset(Dataset):
                 seq_len_idx = 0
                 for past_idx in range(current_idx - (self.seq_len - 1), current_idx + 1):
                     filename = self.files[past_idx]
-                    seq_rgb.append(f"{self.dir_rgb}/{filename}.png")
-                    seq_raw_pcd.append(f"{self.dir_raw_pcd}/{filename}.pcd")
-                    seq_seg_pcd.append(f"{self.dir_seg_pcd}/{filename}.npy")
+                    seq_rgb.append(self.dir_rgb / f"{filename}.png")
+                    seq_raw_pcd.append(self.dir_raw_pcd / f"{filename}.pcd")
+                    seq_seg_pcd.append(self.dir_seg_pcd / f"{filename}.npy")
                     frame_key = f"{sample_idx:06d}:{seq_len_idx:06d}"
                     if filename not in frames_grp:
-                        raw_pcd = PointCloud.from_path(f"{self.dir_raw_pcd}/{filename}.pcd")
-                        seg_pcd = np.load(f"{self.dir_seg_pcd}/{filename}.npy")
+                        raw_pcd = PointCloud.from_path(str(self.dir_raw_pcd / f"{filename}.pcd"))
+                        seg_pcd = np.load(self.dir_seg_pcd / f"{filename}.npy")
                         ptx = np.array(raw_pcd.pc_data['y']) * -1
                         pty = np.array(raw_pcd.pc_data['z'])
                         ptz = np.array(raw_pcd.pc_data['x'])
@@ -160,7 +156,7 @@ class KarrDataset(Dataset):
 
                 # current frames
                 filename = self.files[current_idx]
-                with open(f"{self.dir_meta}/{filename}.yml", "r") as read_meta_current:
+                with open(self.dir_meta / f"{filename}.yml", "r") as read_meta_current:
                     meta_current = yaml.safe_load(read_meta_current)
                 seq_local_x.append(meta_current["local_position_xyz"][0])
                 seq_local_y.append(meta_current["local_position_xyz"][1])
@@ -220,7 +216,7 @@ class KarrDataset(Dataset):
                 # future frames
                 for future_idx in range((current_idx + self.data_rate), (current_idx + (self.pred_len + 1) * self.data_rate), self.data_rate):
                     filename = self.files[future_idx]
-                    with open(f"{self.dir_meta}/{filename}.yml", "r") as read_meta_future:
+                    with open(self.dir_meta / f"{filename}.yml", "r") as read_meta_future:
                         meta_future = yaml.safe_load(read_meta_future)
                     seq_local_x.append(meta_future["local_position_xyz"][0])
                     seq_local_y.append(meta_future["local_position_xyz"][1])
@@ -262,7 +258,7 @@ class KarrDataset(Dataset):
 
         for i in range(0, self.seq_len):
             if self.phase == "test":
-                raw_pcd = PointCloud.from_path(seq_raw_pcd[i])
+                raw_pcd = PointCloud.from_path(str(seq_raw_pcd[i]))
                 seg_pcd = np.load(seq_seg_pcd[i])
                 ptx = np.array(raw_pcd.pc_data['y']) * -1
                 pty = np.array(raw_pcd.pc_data['z'])

@@ -98,8 +98,7 @@ class KarrDataset(Dataset):
 
             preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}_w{latlon_buffer['window_size']}.npy"
             if os.path.exists(preload_path):
-                loaded = np.load(preload_path, allow_pickle=True)
-                self.preload_data = loaded.item() if isinstance(loaded, np.ndarray) else loaded
+                self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)
                 return
 
@@ -220,8 +219,7 @@ class KarrDataset(Dataset):
                 self.preload_data["local_heading"].append(seq_local_heading)
             lidar_hdf5.close()
             np.save(preload_path, np.array(self.preload_data, dtype=object), allow_pickle=True)
-            loaded = np.load(preload_path, allow_pickle=True)
-            self.preload_data = loaded.item() if isinstance(loaded, np.ndarray) else loaded
+            self.preload_data = np.load(preload_path, allow_pickle=True)
             self._load_preload(self.preload_data)
 
     def __len__(self):

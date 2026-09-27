@@ -579,3 +579,7 @@ def quaternion_to_yaw(quat: list, offset=0.0):
         yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y*2 + z*2)) + 1.5708 #1.5708 offset, diputer 90 degree
         yaw_list.append(((yaw + offset) + np.pi) % (2 * np.pi) - np.pi)
     return yaw_list
+
+def magneto_to_yaw(mx, my, offset=0.0):
+    yaw = np.arctan2(-my, mx)
+    return ((yaw + offset) + np.pi) % (2.0 * np.pi) - np.pi

@@ -25,10 +25,6 @@ def compute_imu_yaw(q, offset=0.0):
     yaw_rad = np.arctan2(-x_world[0], x_world[1])
     return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
-def mag_to_yaw(mx, my, offset=0.0):
-    yaw = np.arctan2(-my, mx)
-    return ((yaw + offset) + np.pi) % (2.0 * np.pi) - np.pi
-
 # PID Controller
 turn_controller = PIDController(K_P=0.5, K_I=0.25, K_D=0.15, n=15)
 speed_controller = PIDController(K_P=1.5, K_I=0.25, K_D=0.5, n=15)
@@ -142,7 +138,7 @@ for route in route_list:
         x_cal = mags_calibrated_xy[:, 0]
         y_cal = mags_calibrated_xy[:, 1]
         z_cal = z_body - np.mean(z_body)
-        raw_magnetometer_bearing = mag_to_yaw(x_cal, y_cal)[0]
+        raw_magnetometer_bearing = magneto_to_yaw(x_cal, y_cal)[0]
 
 
         bearing_est = "Mag (Calibrated)"

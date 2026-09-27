@@ -12,7 +12,7 @@ from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from ai23_utility import compute_imu_yaw, harmonic_sinusosidal_fitting, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
+from ai23_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
 from ai23_utility import hampel_filter, bearing_filter
 from config import GlobalConfig
 from preprocess_lidar import gen_bev_front_rear_seg_dep_numpy
@@ -25,7 +25,7 @@ class KarrDataset(Dataset):
         self.pred_len = self.config.pred_len
         self.data_rate = self.config.hz
         self.rp1_close = self.config.rp1_close
-        self.imu_coeffs = self.config.imu_harmonic_coeffs
+        self.magnetometer_calib = self.config.magnetometer_calib
 
         self.filename = []
         self.rgb = []
@@ -171,11 +171,23 @@ class KarrDataset(Dataset):
                 velocity = np.abs(meta_current["velocity"])
 
                 curr_lat, curr_lon, is_outlier = hampel_filter(raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0)
-                q = meta_current['global_orientation_xyzw']
-                raw_imu_bearing = compute_imu_yaw(q)
-                # Apply correction to raw IMU bearing
-                corrected_imu_bearing = harmonic_sinusosidal_fitting(raw_imu_bearing, coeffs=self.imu_coeffs, n_harmonics=2)
-                bearing = bearing_filter(corrected_imu_bearing, bearing_buffer)
+
+                raw_mag = meta_current['magnetic_field']
+                magneto_x0, magneto_y0 = self.magnetometer_calib["offset"]
+                Q = np.array(self.magnetometer_calib["Q"])
+                # Apply Offset and Soft-Iron Q Matrix
+                scale = 1e6
+                x_body = raw_mag[0] * scale # Forward (+X)
+                y_body = raw_mag[2] * scale # Left (+Y)
+                z_body = raw_mag[1] * scale # Up (+Z)
+                mags_offset = np.column_stack([x_body - magneto_x0, y_body - magneto_y0])
+                mags_calibrated_xy = mags_offset @ Q.T
+                x_cal = mags_calibrated_xy[:, 0]
+                y_cal = mags_calibrated_xy[:, 1]
+                z_cal = z_body - np.mean(z_body)
+                corrected_magneto_bearing = magneto_to_yaw(x_cal, y_cal)[0]
+        
+                bearing = bearing_filter(corrected_magneto_bearing, bearing_buffer)
 
                 self.preload_data["bearing"].append(bearing)
                 self.preload_data["lat"].append(curr_lat)

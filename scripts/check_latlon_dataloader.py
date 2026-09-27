@@ -1,5 +1,11 @@
+import sys
+from pathlib import Path
+
 import plotly.graph_objects as go
 from tqdm import tqdm
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from config import GlobalConfig
 from ai23_dataloader import KarrDataset
 

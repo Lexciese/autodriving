@@ -1,3 +1,6 @@
+import sys
+from pathlib import Path
+
 import yaml
 import numpy as np
 import pandas as pd
@@ -5,6 +8,9 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation as R
 import plotly.graph_objects as go
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from config import GlobalConfig
 
 config = GlobalConfig()

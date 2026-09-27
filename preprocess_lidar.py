@@ -214,7 +214,7 @@ def gen_bev_front_rear_seg_dep_numpy(
 
     rear_dep = np.zeros((cfg.bs, 1, cfg.front_h, cfg.front_w), dtype=np.float32)
     rear_dep[r_ptn, 0, r_y, r_x] = log_d_rear
-    return ProjectionOutputs(bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep)
+    return bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep
 
 def gen_bev_front_rear_seg_dep_tensor(
     ptx: torch.Tensor,
@@ -327,7 +327,7 @@ def gen_bev_front_rear_seg_dep_tensor(
     
     rear_dep = torch.zeros((cfg.bs, 1, cfg.front_h, cfg.front_w), dtype=torch.float32, device=cfg.gpu_device)
     rear_dep[r_ptn, 0, r_y, r_x] = log_d_rear
-    return ProjectionOutputs(bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep)
+    return bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep
 
 def save_outputs(output_dir_paths: dict[str, Path], labels: np.ndarray, colorized: ColorizedOutputs):
     np.save(str(output_dir_paths['seg']), labels)
@@ -338,13 +338,13 @@ def save_outputs(output_dir_paths: dict[str, Path], labels: np.ndarray, colorize
     cv2.imwrite(str(output_dir_paths['rear_seg']), colorized.rear_segcol)
     cv2.imwrite(str(output_dir_paths['rear_dep']), colorized.rear_depcol)
 
-def colorize_projections(projections: ProjectionOutputs, colors: list):
-    bev_seg = projections.bev_seg.cpu().numpy() if isinstance(projections.bev_seg, torch.Tensor) else projections.bev_seg
-    bev_dep = projections.bev_dep.cpu().numpy() if isinstance(projections.bev_dep, torch.Tensor) else projections.bev_dep
-    front_seg = projections.front_seg.cpu().numpy() if isinstance(projections.front_seg, torch.Tensor) else projections.front_seg
-    front_dep = projections.front_dep.cpu().numpy() if isinstance(projections.front_dep, torch.Tensor) else projections.front_dep
-    rear_seg = projections.rear_seg.cpu().numpy() if isinstance(projections.rear_seg, torch.Tensor) else projections.rear_seg
-    rear_dep = projections.rear_dep.cpu().numpy() if isinstance(projections.rear_dep, torch.Tensor) else projections.rear_dep
+def colorize_projections(bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep, colors: list):
+    bev_seg = bev_seg.cpu().numpy() if isinstance(bev_seg, torch.Tensor) else bev_seg
+    bev_dep = bev_dep.cpu().numpy() if isinstance(bev_dep, torch.Tensor) else bev_dep
+    front_seg = front_seg.cpu().numpy() if isinstance(front_seg, torch.Tensor) else front_seg
+    front_dep = front_dep.cpu().numpy() if isinstance(front_dep, torch.Tensor) else front_dep
+    rear_seg = rear_seg.cpu().numpy() if isinstance(rear_seg, torch.Tensor) else rear_seg
+    rear_dep = rear_dep.cpu().numpy() if isinstance(rear_dep, torch.Tensor) else rear_dep
 
     return ColorizedOutputs(
         bev_segcol=colorize_seg(bev_seg, colors),
@@ -408,8 +408,8 @@ class LidarSegmentationPipeline:
             if self.config.lidar_sensor == "rs32":
                 coords = torch.stack([-coords[:, 1], coords[:, 2], coords[:, 0]], dim=1)
 
-            projections = gen_bev_front_rear_seg_dep_tensor(coords[:, 0], coords[:, 1], coords[:, 2], ptseg, self.config)
-            colorized = colorize_projections(projections, self.config.SEG_CLASSES['colors'])
+            bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep = gen_bev_front_rear_seg_dep_tensor(coords[:, 0], coords[:, 1], coords[:, 2], ptseg, self.config)
+            colorized = colorize_projections(bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep, self.config.SEG_CLASSES['colors'])
             
             predict_labels = np.expand_dims(ptseg.cpu().numpy(), axis=1)
             

@@ -1,6 +1,6 @@
 import sys
 import yaml
-import numpy as np
+import itertools
 from pathlib import Path
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
@@ -12,65 +12,148 @@ from config import GlobalConfig
 
 config = GlobalConfig()
 
-BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosbag2_2025_11_05-11_00_19_0.mcap")
-MAG_TOPIC = '/magnetometer'
-SLOP_NS = 150_000_000  # 0.15 s, matches preprocess_rosbag_extraction.py
-OVERWRITE = False  # recompute files that already have magnetic_field
+BAG = Path("/media/mf/AUTODRIVING-4TB1/7 NOV RINGROAD/rosbag2_2025_11_07-15_20_20/rosbag2_2025_11_07-15_20_20_0.mcap")
+SLOP_NS = 150_000_000  # 0.15 s
+QUEUE_SIZE = 50
+OVERWRITE = True
+
+TOPICS = [
+    '/gnss/fix',
+    '/gnss/fix_velocity',
+    '/zed/zed_node/odom',
+    '/imu',
+    '/magnetometer',
+    '/zed/zed_node/rgb/image_rect_color',
+    '/zed/zed_node/point_cloud/cloud_registered',
+    '/zed/zed_node/depth/depth_registered',
+    '/rslidar_points'
+]
 
 
-def load_magnetometer(bag_path):
-    typestore = get_typestore(Stores.ROS2_HUMBLE)
-    stamps = []
-    fields = []
-    with AnyReader([bag_path], default_typestore=typestore) as reader:
-        conns = [c for c in reader.connections if c.topic == MAG_TOPIC]
-        for conn, _, raw in reader.messages(connections=conns):
-            msg = reader.deserialize(raw, conn.msgtype)
-            stamp = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
-            stamps.append(stamp)
-            fields.append((
-                float(msg.magnetic_field.x),
-                float(msg.magnetic_field.y),
-                float(msg.magnetic_field.z),
-                [float(x) for x in msg.magnetic_field_covariance],
-            ))
-    return np.asarray(stamps, dtype=np.int64), fields
+class ApproximateTimeSynchronizer:
+    def __init__(self, topics, slop_ns, callback, queue_size=100):
+        self.topics = topics
+        self.slop_ns = slop_ns
+        self.callback = callback
+        self.queue_size = queue_size
+        self.queues = {t: {} for t in topics}
+
+    def _get_timestamp(self, msg):
+        return msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+
+    def add(self, topic, msg):
+        if topic not in self.queues:
+            return
+
+        stamp = self._get_timestamp(msg)
+        my_queue = self.queues[topic]
+        my_queue[stamp] = msg
+
+        while len(my_queue) > self.queue_size:
+            del my_queue[min(my_queue.keys())]
+
+        self._process(stamp)
+
+    def _process(self, latest_stamp):
+        stamps = []
+        topic_list = list(self.topics)
+
+        for t in topic_list:
+            queue = self.queues[t]
+            topic_stamps = []
+
+            for s in queue.keys():
+                stamp_delta = abs(s - latest_stamp)
+                if stamp_delta > self.slop_ns:
+                    continue
+                topic_stamps.append((s, stamp_delta))
+
+            if not topic_stamps:
+                return
+            topic_stamps.sort(key=lambda x: x[1])
+            stamps.append(topic_stamps)
+
+        for vv in itertools.product(*[[s[0] for s in ts] for ts in stamps]):
+            vv = list(vv)
+            if (max(vv) - min(vv)) < self.slop_ns:
+                valid = True
+                for t, s in zip(topic_list, vv):
+                    if s not in self.queues[t]:
+                        valid = False
+                        break
+
+                if not valid:
+                    continue
+                sync_msgs = {t: self.queues[t][s] for t, s in zip(topic_list, vv)}
+
+                self.callback(sync_msgs)
+
+                for t, s in zip(topic_list, vv):
+                    del self.queues[t][s]
+
+                break
 
 
 def main():
     if config.select_route == "all":
         raise ValueError("append_magnetic_field.py requires a single select_route, not 'all'")
+
     meta_path = config.datadir / config.select_route / "meta"
-    file_list = sorted(meta_path.glob("*.yml"))
-    if not file_list:
-        raise FileNotFoundError(f"No .yml meta files found under {meta_path}")
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Meta directory not found: {meta_path}")
 
-    stamps, fields = load_magnetometer(BAG)
-    if stamps.size == 0:
-        raise RuntimeError(f"No '{MAG_TOPIC}' messages found in {BAG}")
+    stats = {'updated': 0, 'skipped': 0, 'not_found': 0}
 
-    updated = skipped = unmatched = 0
-    for f in tqdm(file_list, desc="Backfilling"):
-        meta = yaml.safe_load(f.read_text())
+    def sync_callback(sync_data):
+        first_topic = next(iter(sync_data))
+        ts = sync_data[first_topic].header.stamp
+        sec = str(ts.sec).zfill(10)
+        nsec = str(ts.nanosec).zfill(10)
+        fname = f"{sec}_{nsec}.yml"
+        meta_file = meta_path / fname
+
+        if not meta_file.exists():
+            stats['not_found'] += 1
+            return
+
+        meta = yaml.safe_load(meta_file.read_text())
         if 'magnetic_field' in meta and not OVERWRITE:
-            skipped += 1
-            continue
+            stats['skipped'] += 1
+            return
 
-        target_ns = int(meta['sec']) * 1_000_000_000 + int(meta['nanosec'])
-        idx = int(np.argmin(np.abs(stamps - target_ns)))
-        if abs(int(stamps[idx]) - target_ns) > SLOP_NS:
-            unmatched += 1
-            print(f"[warn] no magnetometer match within slop for {f.name}")
-            continue
+        mag_msg = sync_data['/magnetometer']
+        meta['magnetic_field'] = [
+            float(mag_msg.magnetic_field.x),
+            float(mag_msg.magnetic_field.y),
+            float(mag_msg.magnetic_field.z),
+        ]
+        meta['magnetic_field_covariance'] = [
+            float(x) for x in mag_msg.magnetic_field_covariance
+        ]
 
-        x, y, z, cov = fields[idx]
-        meta['magnetic_field'] = [x, y, z]
-        meta['magnetic_field_covariance'] = cov
-        with open(f, 'w') as fh:
-            yaml.dump(meta, fh)
-        updated += 1
+        with open(meta_file, 'w') as f:
+            yaml.dump(meta, f, sort_keys=False)
 
-    print(f"updated={updated} skipped={skipped} unmatched={unmatched} total={len(file_list)}")
+        stats['updated'] += 1
+
+    typestore = get_typestore(Stores.ROS2_HUMBLE)
+    with AnyReader([BAG], default_typestore=typestore) as reader:
+        conns = [c for c in reader.connections if c.topic in TOPICS]
+        synchronizer = ApproximateTimeSynchronizer(TOPICS, SLOP_NS, sync_callback, QUEUE_SIZE)
+
+        total = sum(c.msgcount for c in conns if hasattr(c, 'msgcount')) or None
+        msg_iter = reader.messages(connections=conns)
+        
+        if tqdm is not None:
+            msg_iter = tqdm(msg_iter, total=total, desc="Backfilling Meta Files", unit="msg")
+
+        for conn, ts, raw in msg_iter:
+            msg = reader.deserialize(raw, conn.msgtype)
+            if not hasattr(msg, 'header'):
+                continue
+            synchronizer.add(conn.topic, msg)
+
+    print(f"\nFinished: updated={stats['updated']} skipped={stats['skipped']} missing_file={stats['not_found']}")
 
 
 if __name__ == "__main__":

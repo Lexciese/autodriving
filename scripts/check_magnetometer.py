@@ -173,6 +173,8 @@ def main():
     mags_uT = raw_mags * scale
 
     # Reorder channels according to ROS FLU standard (x-Forward, y-Left, z-Up)
+    # Current sensor placement: x-forward, y-left, z-up but there is a catch. The data output is swapped for z and y (idk why), 
+    # so the solution is to remap the axis by swapping y and z: y_body = mag_z and z_body = mag_y
     x_body = mags_uT[:, 0]  # Forward (+X)
     y_body = mags_uT[:, 2]  # Left (+Y)
     z_body = mags_uT[:, 1]  # Up (+Z)

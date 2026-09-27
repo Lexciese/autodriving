@@ -18,15 +18,6 @@ from preprocess_util import colorize_seg, colorize_logdepth
 from config import GlobalConfig
 
 @dataclass(frozen=True)
-class ProjectionOutputs:
-    bev_seg: torch.Tensor | np.ndarray
-    bev_dep: torch.Tensor | np.ndarray
-    front_seg: torch.Tensor | np.ndarray
-    front_dep: torch.Tensor | np.ndarray
-    rear_seg: torch.Tensor | np.ndarray
-    rear_dep: torch.Tensor | np.ndarray
-
-@dataclass(frozen=True)
 class ColorizedOutputs:
     bev_segcol: np.ndarray
     bev_depcol: np.ndarray

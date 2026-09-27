@@ -4,7 +4,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 import numpy as np
 
-from ai23.config import GlobalConfig
+from config import GlobalConfig
 
 def kaiming_init(m):
     if isinstance(m, nn.Conv2d):

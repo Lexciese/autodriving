@@ -4,9 +4,11 @@ from pathlib import Path
 
 dataset_path = Path('../datasetx')
 
-subfolders = [p for p in dataset_path.glob('*') if p.is_dir() and (p / 'meta').exists()]
+# subfolders = [p for p in dataset_path.glob('*') if p.is_dir() and (p / 'meta').exists()]
+subfolders = ["/media/mf/SATA4TB/autodriving/datasetx/ringroad/"]
 
 for subfolder in subfolders:
+    subfolder = Path(subfolder)
     lats, lons, labels = [], [], []
     yml_files = sorted((subfolder / 'meta').glob('*.yml'))
 

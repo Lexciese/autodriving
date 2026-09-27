@@ -9,16 +9,14 @@ torch.backends.cudnn.benchmark = True
 
 from pypcd4 import PointCloud
 from pypcd4.pointcloud2 import sensor_msgs__msg__PointCloud2
-from preprocessing.polarseg.network.BEV_Unet import BEV_Unet
-from preprocessing.polarseg.network.ptBEV import ptBEVnet
-from preprocessing.data_util import preproc_spherical, colorize_seg, colorize_logdepth
+from common.polarseg.network.BEV_Unet import BEV_Unet
+from common.polarseg.network.ptBEV import ptBEVnet
+from preprocess_util import preproc_spherical, colorize_seg, colorize_logdepth
 
-from preprocessing.preprocessing import Preprocessing
-from preprocessing.config import GlobalConfig
+from config import GlobalConfig
 
-class PreprocessingLidar(Preprocessing):
+class PreprocessingLidar():
     def __init__(self, config: GlobalConfig, use_tensor=False):
-        super().__init__("lidar")
         self.config: GlobalConfig = config
         self.use_tensor = use_tensor
         self.pcd = None

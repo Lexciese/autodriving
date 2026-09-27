@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from preprocessing.config import GlobalConfig
+from config import GlobalConfig
 configx = GlobalConfig()
 
 

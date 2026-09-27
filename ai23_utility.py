@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from scipy.spatial.transform import Rotation as R
 
-from ai23.config import GlobalConfig
+from config import GlobalConfig
 
 def swap_RGB2BGR(matrix):
     red = matrix[:,:,0].copy()

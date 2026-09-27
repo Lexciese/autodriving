@@ -1,15 +1,16 @@
 import os
-import cv2
-import numpy as np
-import yaml
-from PIL import Image, ImageDraw, ImageFont
-import torch
-from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 
-from ai23.config import GlobalConfig
-from preprocessing.data_util import plot_sdc_rpwp, plot_lidbev_rpwp, plot_lidfront_rpwp
-from ai23.dataloader import KarrDataset
+import cv2
+import numpy as np
+import torch
+import yaml
+from PIL import Image, ImageDraw, ImageFont
+from tqdm import tqdm
+
+from config import GlobalConfig
+from ai23_dataloader import KarrDataset
+from preprocess_util import plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp
 
 
 def colorize_seg(sem_map, colmap):
@@ -167,7 +168,7 @@ def generate_frame(dataset: KarrDataset, index: int) -> np.ndarray:
     return final_img
 
 
-def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0, output_path: str = None, fps: int = 10, max_frames: int = None, num_workers: int = 8):
+def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0, output_path: str = None, fps: int = 10, min_frames: int = None, max_frames: int = None, num_workers: int = 8):
     if mode == "single":
         if output_path is None:
             output_path = f"sample_shot_idx_{index}.jpg"
@@ -181,13 +182,15 @@ def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0
             output_path = "dataset_visualization.avi"
 
         total_samples = len(dataset)
-        num_frames = min(total_samples, max_frames) if max_frames else total_samples
+        max_frames = min(total_samples, max_frames) if max_frames else total_samples
+        min_frames = 0 if min_frames == 0 else min_frames
 
-        if num_frames == 0:
+
+        if max_frames == 0:
             print("Dataset is empty. Skipping video creation.")
             return
 
-        print(f"[VIDEO MODE] Generating video for {num_frames} frames at {fps} FPS...")
+        print(f"[VIDEO MODE] Generating video for {max_frames-min_frames} frames at {fps} FPS...")
 
         first_frame = generate_frame(dataset, 0)
         h, w, _ = first_frame.shape
@@ -197,12 +200,12 @@ def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             frames_generator = executor.map(
-                lambda i: generate_frame(dataset, i), 
-                range(num_frames), 
+                lambda i: generate_frame(dataset, i),
+                range(min_frames, max_frames),
                 chunksize=1
             )
 
-            for frame in tqdm(frames_generator, total=num_frames, desc="Encoding Video"):
+            for frame in tqdm(frames_generator, total=max_frames-min_frames, desc="Encoding Video"):
                 if frame.shape[0] != h or frame.shape[1] != w:
                     frame = cv2.resize(frame, (w, h))
 
@@ -236,6 +239,6 @@ if __name__ == "__main__":
             mode="video",
             fps=10,
             output_path="full_dataset_preview.avi",
-            max_frames=None,
+            min_frames= 0,
             num_workers=8
         )

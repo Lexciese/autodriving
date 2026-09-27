@@ -83,8 +83,8 @@ def plot_yaml_route(file_path: str | Path, output_html: str = "route_plot.html")
         xaxis_title="Longitude (deg)",
         yaxis_title="Latitude (deg)",
         hovermode="closest",
-        width=1000,
-        height=700,
+        width=1080,
+        height=1080,
         template="plotly_white",
     )
 
@@ -100,4 +100,4 @@ def plot_yaml_route(file_path: str | Path, output_html: str = "route_plot.html")
 
 
 # Usage example:
-plot_yaml_route("/media/mf/SATA4TB/autodriving/datasetx/2026-09-12_route00/2026-09-12_route00_routepoint_list_hampel_w3.yml", output_html="2026-09-12_route00_routepoint_list_hampel_w3.html")
+plot_yaml_route("/media/mf/SATA4TB/autodriving/datasetx/ringroad/ringroad_routepoint_list.yml", output_html="ringroad_routepoint_list.html")

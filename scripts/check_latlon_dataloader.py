@@ -1,7 +1,7 @@
 import plotly.graph_objects as go
 from tqdm import tqdm
-from ai23.config import GlobalConfig
-from ai23.dataloader import KarrDataset
+from config import GlobalConfig
+from ai23_dataloader import KarrDataset
 
 def plot_dataset_trajectory(
     dataset: KarrDataset, 
@@ -74,7 +74,6 @@ if __name__ == "__main__":
     
     plot_dataset_trajectory(
         dataset=dataset, 
-        start_idx=0, 
-        end_idx=700, 
+        start_idx=0,
         output_file="trajectory_dataloader.html"
     )

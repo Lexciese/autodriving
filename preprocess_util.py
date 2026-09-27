@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import cv2
 
-from preprocessing.config import GlobalConfig
+from config import GlobalConfig
 #DARI POLARSEG dataset.py
 #fokus cuma ambil grid_ind dan return_fea aja
 

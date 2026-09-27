@@ -12,10 +12,10 @@ from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from ai23.utility import compute_imu_yaw, harmonic_sinusosidal_fitting, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
-from ai23.utility import hampel_filter, bearing_filter
-from ai23.config import GlobalConfig
-from preprocessing.preprocessing_lidar import PreprocessingLidar
+from ai23_utility import compute_imu_yaw, harmonic_sinusosidal_fitting, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
+from ai23_utility import hampel_filter, bearing_filter
+from config import GlobalConfig
+from preprocess_lidar import PreprocessingLidar
 
 class KarrDataset(Dataset):
     def __init__(self, config: GlobalConfig, phase="train"):

@@ -13,10 +13,10 @@ from torch.utils.tensorboard import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 import shutil
-from ai23.model import xr20
-from ai23.dataloader import KarrDataset
-from ai23.config import GlobalConfig
-import common.config
+from ai23_model import xr20
+from ai23_dataloader import KarrDataset
+from config import GlobalConfig
+import config
 
 
 # Class untuk penyimpanan dan perhitungan update loss
@@ -94,14 +94,17 @@ def train(data_loader, model, config: GlobalConfig, writer, cur_epoch, optimizer
 
         # compute loss
         loss_wp = F.l1_loss(pred_wp, gt_waypoints)
-        total_loss = params_lw[0] * loss_wp
+        if config.MGN:
+            total_loss = params_lw[0] * loss_wp
+        else:
+            total_loss = config.loss_weights[0] * loss_wp
 
         # backprop, kalkulasi gradient, dan optimasi
         optimizer.zero_grad()
 
         if batch_ke == 0:  # batch pertama, hitung loss awal
             total_loss.backward()
-            loss_wp_0 = torch.clone(loss_wp)
+            loss_wp_0 = loss_wp.detach().clone()
 
         elif 0 < batch_ke < total_batch - 1:
             total_loss.backward()
@@ -242,14 +245,22 @@ def main():
 
     # Calculate dataset lengths
     # start from 3161 for "UGM Baru" Dataset
-    total_len = len(karr_dataset) - 3161
+    # total_len = len(karr_dataset) - 3161
+    # # train: 80%, validation: 10%, test: 10%
+    # train_len = int(0.8 * total_len)
+    # val_len = int(0.1 * total_len)
+    # test_len = total_len - train_len - val_len
+    # train_indices = list(range(3161, train_len+3161))
+    # val_indices = list(range(train_len + 3161, train_len + val_len + 3161))
+
+    total_len = len(karr_dataset)
     # train: 80%, validation: 10%, test: 10%
     train_len = int(0.8 * total_len)
     val_len = int(0.1 * total_len)
     test_len = total_len - train_len - val_len
 
-    train_indices = list(range(3161, train_len+3161))
-    val_indices = list(range(train_len + 3161, train_len + val_len + 3161))
+    train_indices = list(range(0, train_len))
+    val_indices = list(range(train_len, train_len + val_len))
 
     train_set = Subset(karr_dataset, train_indices)
     val_set = Subset(karr_dataset, val_indices)
@@ -257,8 +268,8 @@ def main():
 
     drop_last = True if len(train_set) % config.batch_size == 1 else False
 
-    dataloader_train = DataLoader(train_set, batch_size=config.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=drop_last)
-    dataloader_val = DataLoader(val_set, batch_size=config.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    dataloader_train = DataLoader(train_set, batch_size=config.batch_size, shuffle=True, num_workers=6, pin_memory=True, drop_last=drop_last)
+    dataloader_val = DataLoader(val_set, batch_size=config.batch_size, shuffle=False, num_workers=6, pin_memory=True)
 
     print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {test_len}")
 
@@ -292,7 +303,7 @@ def main():
         os.makedirs(config.logdir, exist_ok=True)
         print('Created new retrain dir:', config.logdir)
 
-    config_file_path = common.config.__file__
+    config_file_path = config.__file__
     shutil.copyfile(config_file_path, os.path.join(config.logdir, 'config.py'))
 
     log = OrderedDict([

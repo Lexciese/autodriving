@@ -8,7 +8,7 @@ from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
 from pypcd4 import PointCloud, Encoding
 from cv_bridge import CvBridge
-from preprocessing.config import GlobalConfig
+from config import GlobalConfig
 
 try:
     from tqdm import tqdm

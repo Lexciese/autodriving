@@ -14,13 +14,13 @@ from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
-from ai23.model import xr20
-from ai23.dataloader import KarrDataset
+from ai23_model import xr20
+from ai23_dataloader import KarrDataset
 
-from preprocessing.data_util import plot_lidbev_rpwp, plot_lidfront_rpwp
+from preprocess_util import plot_lidbev_rpwp, plot_lidfront_rpwp
 
 # use the config from the log directory
-from ai23.config import GlobalConfig, select_logdir
+from config import GlobalConfig, select_logdir
 import importlib.util
 from typing import cast
 

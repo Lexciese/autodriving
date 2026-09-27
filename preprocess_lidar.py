@@ -346,7 +346,7 @@ def colorize_projections(bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_
         rear_depcol=colorize_logdepth(rear_dep),
     )
 
-class LidarSegmentationPipeline:
+class GenerateLidSegDep:
     def __init__(self, config: GlobalConfig):
         self.config = config
         self.grid_size = torch.from_numpy(np.asarray(self.config.grid_size)).to(self.config.gpu_device, dtype=self.config.dtype)
@@ -413,7 +413,7 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_id
     torch.backends.cudnn.benchmark = True
 
-    pipeline = LidarSegmentationPipeline(config)
+    pipeline = GenerateLidSegDep(config)
     routes = sorted([p for p in Path(config.datadir).iterdir() if p.is_dir()])
     if config.select_route != "all":
         routes = sorted([Path(p) for p in config.select_route])

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import cv2
+from scipy.spatial.transform import Rotation as R
 
 from config import GlobalConfig
 #DARI POLARSEG dataset.py
@@ -583,3 +584,12 @@ def quaternion_to_yaw(quat: list, offset=0.0):
 def magneto_to_yaw(mx, my, offset=0.0):
     yaw = np.arctan2(-my, mx)
     return ((yaw + offset) + np.pi) % (2.0 * np.pi) - np.pi
+
+# project into NWU system
+def compute_imu_yaw(q, offset=0.0):
+    r = R.from_quat(q)
+    # Project the sensor's X-axis (+X Forward) into world horizontal frame
+    x_world = r.apply([1, 0, 0])
+    # Compute Compass Yaw: arctan2(East, North)
+    yaw_rad = np.arctan2(-x_world[0], x_world[1])
+    return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi

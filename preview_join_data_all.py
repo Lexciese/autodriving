@@ -6,22 +6,10 @@ import yaml
 from tqdm import tqdm
 import pandas as pd
 
-from preprocess_util import hampel_filter, bearing_filter, resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, latlon_to_yaw, euler_from_quaternion
+from preprocess_util import hampel_filter, bearing_filter, resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, magneto_to_yaw, latlon_to_yaw, compute_imu_yaw, euler_from_quaternion
 from preprocess_util import PIDController, pid_control
 
 from collections import deque
-
-def normalize_angle_deg(angle):
-    return (angle + 180) % 360 - 180
-
-# project into NWU system
-def compute_imu_yaw(q, offset=0.0):
-    r = R.from_quat(q)
-    # Project the sensor's X-axis (+X Forward) into world horizontal frame
-    x_world = r.apply([1, 0, 0])
-    # Compute Compass Yaw: arctan2(East, North)
-    yaw_rad = np.arctan2(-x_world[0], x_world[1])
-    return (yaw_rad + offset + np.pi) % (2.0 * np.pi) - np.pi
 
 # PID Controller
 turn_controller = PIDController(K_P=0.5, K_I=0.25, K_D=0.15, n=15)

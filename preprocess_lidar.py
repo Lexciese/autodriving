@@ -35,41 +35,6 @@ class ColorizedOutputs:
     rear_segcol: np.ndarray
     rear_depcol: np.ndarray
 
-@dataclass(frozen=True)
-class LidarCfg:
-    gpu_device = torch.device("cuda:0")
-    lidar_sensor: str
-    min_volume_space: np.ndarray | torch.Tensor
-    max_volume_space: np.ndarray | torch.Tensor
-    grid_size: np.ndarray | torch.Tensor
-    max_intensity: float
-    polarseg_weight_path : str | Path
-    SEG_CLASSES: dict
-
-    # Dimensions & Classes
-    bs: int
-    n_class_kitti: int
-    bev_h: int
-    bev_w: int
-    front_h: int
-    front_w: int
-    # Spatial Bounds
-    cover_area_lr: float | int
-    cover_area_rf: list[int] | list[float]
-    dep_min: float
-    dep_max: float
-    # Resolutions
-    h_res: float
-    h_res_rad: float
-    v_res: float
-    v_res_rad: float
-    v_fov: list[int] | list[float]
-    v_fov_total: float | int
-    # Multipliers
-    bev_multiplier: float | int
-    front_multiplier: float | int
-    rear_multiplier: float | int
-
 def get_pcd(path: PathLike):
     pcd = PointCloud.from_path(path)
     pcd_x = pcd.pc_data['x']
@@ -141,7 +106,7 @@ def gen_bev_front_rear_seg_dep_numpy(
     pty: np.ndarray,
     ptz: np.ndarray,
     ptseg: np.ndarray,
-    cfg: LidarCfg
+    cfg: GlobalConfig
 ):
     ptx = np.asarray(ptx, dtype=np.float32).ravel()
     pty = np.asarray(pty, dtype=np.float32).ravel()
@@ -154,10 +119,10 @@ def gen_bev_front_rear_seg_dep_numpy(
     # BEV projection
     # BEV uses X (forward) and Z (height) axes; coordinate normalization.
     # X: map from [-cover_area_lr, cover_area_lr] to [0, bev_w-1]
-    # Z: map from [cover_area_rf[0], cover_area_rf[1]] to [0, bev_h-1] (with offset so that lowest height becomes 0)
+    # Z: map from [lid_cover_area_rf[0], lid_cover_area_rf[1]] to [0, bev_h-1] (with offset so that lowest height becomes 0)
 
-    z_offset = cfg.cover_area_rf[0]
-    z_range = cfg.cover_area_rf[1] - cfg.cover_area_rf[0]
+    z_offset = cfg.lid_cover_area_rf[0]
+    z_range = cfg.lid_cover_area_rf[1] - cfg.lid_cover_area_rf[0]
     ptz_bev = ptz - z_offset
 
     bev_x = np.floor((ptx + cfg.cover_area_lr) * (cfg.bev_w - 1) / (2 * cfg.cover_area_lr)).astype(np.int32)
@@ -256,7 +221,7 @@ def gen_bev_front_rear_seg_dep_tensor(
     pty: torch.Tensor,
     ptz: torch.Tensor,
     ptseg: torch.Tensor,
-    cfg: LidarCfg
+    cfg: GlobalConfig
 ):
     ptx = ptx.ravel().float()
     pty = pty.ravel().float()
@@ -269,10 +234,10 @@ def gen_bev_front_rear_seg_dep_tensor(
     # BEV projection
     # BEV uses X (forward) and Z (height) axes; coordinate normalization.
     # X: map from [-cover_area_lr, cover_area_lr] to [0, bev_w-1]
-    # Z: map from [cover_area_rf[0], cover_area_rf[1]] to [0, bev_h-1] (with offset so that lowest height becomes 0)
+    # Z: map from [lid_cover_area_rf[0], lid_cover_area_rf[1]] to [0, bev_h-1] (with offset so that lowest height becomes 0)
     
-    z_offset = cfg.cover_area_rf[0]
-    z_range = cfg.cover_area_rf[1] - cfg.cover_area_rf[0]
+    z_offset = cfg.lid_cover_area_rf[0]
+    z_range = cfg.lid_cover_area_rf[1] - cfg.lid_cover_area_rf[0]
     ptz_bev = ptz - z_offset
     
     bev_x = torch.floor((ptx + cfg.cover_area_lr) * (cfg.bev_w - 1) / (2 * cfg.cover_area_lr)).long()
@@ -392,35 +357,7 @@ def colorize_projections(projections: ProjectionOutputs, colors: list):
 
 class LidarSegmentationPipeline:
     def __init__(self, config: GlobalConfig):
-        self.config = GlobalConfig()
-        self.lidar_cfg = LidarCfg(
-            lidar_sensor=config.lidar_sensor,
-            min_volume_space=config.min_volume_space,
-            max_volume_space=config.max_volume_space,
-            grid_size=config.grid_size,
-            max_intensity=config.max_intensity,
-            polarseg_weight_path=config.polarseg_weight_path,
-            SEG_CLASSES=config.SEG_CLASSES,
-            bs=config.bs,
-            n_class_kitti=config.n_class_kitti,
-            bev_h=config.bev_h,
-            bev_w=config.bev_w,
-            front_h=config.front_h,
-            front_w=config.front_w,
-            cover_area_lr=config.cover_area_lr,
-            cover_area_rf=config.lid_cover_area_rf,
-            dep_min=config.dep_min,
-            dep_max=config.dep_max,
-            h_res=config.h_res,
-            h_res_rad=config.h_res_rad,
-            v_res=config.v_res,
-            v_res_rad=config.v_res_rad,
-            v_fov=config.v_fov,
-            v_fov_total=config.v_fov_total,
-            bev_multiplier=config.bev_multiplier,
-            front_multiplier=config.front_multiplier,
-            rear_multiplier=config.rear_multiplier,
-        )
+        self.config = config
         self.grid_size = torch.from_numpy(np.asarray(self.config.grid_size)).to(self.config.gpu_device, dtype=self.config.dtype)
         self.max_volume_space = torch.from_numpy(np.asarray(self.config.max_volume_space)).to(self.config.gpu_device, dtype=self.config.dtype)
         self.min_volume_space = torch.from_numpy(np.asarray(self.config.min_volume_space)).to(self.config.gpu_device, dtype=self.config.dtype)
@@ -428,8 +365,8 @@ class LidarSegmentationPipeline:
 
     def _init_model(self) -> ptBEVnet:
         bev_model = BEV_Unet(
-            n_class=self.lidar_cfg.n_class_kitti - 1,
-            n_height=self.lidar_cfg.grid_size[2],
+            n_class=self.config.n_class_kitti - 1,
+            n_height=self.config.grid_size[2],
             input_batch_norm=True,
             dropout=0.5,
             circular_padding=True,
@@ -437,16 +374,16 @@ class LidarSegmentationPipeline:
         model = ptBEVnet(
             bev_model,
             pt_model='pointnet',
-            grid_size=self.lidar_cfg.grid_size,
+            grid_size=self.config.grid_size,
             fea_dim=9,
             max_pt_per_encode=256,
             out_pt_fea_dim=512,
             kernal_size=1,
             pt_selection='random',
-            fea_compre=self.lidar_cfg.grid_size[2],
+            fea_compre=self.config.grid_size[2],
         )
-        model.load_state_dict(torch.load(self.lidar_cfg.polarseg_weight_path))
-        model.to(self.lidar_cfg.gpu_device)
+        model.load_state_dict(torch.load(self.config.polarseg_weight_path))
+        model.to(self.config.gpu_device)
         model.eval()
         return model
 
@@ -460,7 +397,7 @@ class LidarSegmentationPipeline:
                 self.min_volume_space,
                 self.max_volume_space,
                 self.grid_size,
-                self.lidar_cfg.max_intensity
+                self.config.max_intensity
             )            
             # Forward pass through model
             logits = self.model([pt_fea], [grid_ind[:, :2]])
@@ -468,11 +405,11 @@ class LidarSegmentationPipeline:
             
             # Coordinate re-mapping based on sensor orientation
             coords = pcd_tensor[:, :3]
-            if self.lidar_cfg.lidar_sensor == "rs32":
+            if self.config.lidar_sensor == "rs32":
                 coords = torch.stack([-coords[:, 1], coords[:, 2], coords[:, 0]], dim=1)
 
-            projections = gen_bev_front_rear_seg_dep_tensor(coords[:, 0], coords[:, 1], coords[:, 2], ptseg, self.lidar_cfg)
-            colorized = colorize_projections(projections, self.lidar_cfg.SEG_CLASSES['colors'])
+            projections = gen_bev_front_rear_seg_dep_tensor(coords[:, 0], coords[:, 1], coords[:, 2], ptseg, self.config)
+            colorized = colorize_projections(projections, self.config.SEG_CLASSES['colors'])
             
             predict_labels = np.expand_dims(ptseg.cpu().numpy(), axis=1)
             

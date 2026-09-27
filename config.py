@@ -7,16 +7,7 @@ import numpy as np
 import torch
 from PIL import ImageFont
 
-# Project paths are anchored to the installed ``preprocessing`` package so that a
-# config copied into a log directory still resolves the repo root and pretrained weights.
-try:
-    import preprocessing
-    _PREPROCESSING_DIR = Path(preprocessing.__file__).resolve().parent
-    _REPO_ROOT = _PREPROCESSING_DIR.parent
-except Exception:
-    _PREPROCESSING_DIR = Path(__file__).resolve().parents[1] / "preprocessing"
-    _REPO_ROOT = _PREPROCESSING_DIR.parent
-
+_REPO_ROOT = Path(__file__).resolve().parent
 
 class GlobalConfig:
     # General / device
@@ -30,15 +21,15 @@ class GlobalConfig:
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
 
     # Data paths
-    datadir = str(_REPO_ROOT / "datasetx") + "/"
-    root_dir = str(_REPO_ROOT / 'dataset' / 'dataset')
-    select_route = "ugm_baru_with_magnetometer" # "all" "ugm_baru" # ringroad
-    train_dir = root_dir + '/train_routes'
-    val_dir = root_dir + '/val_routes'
-    test_dir = root_dir + '/test_routes'
-    polarseg_weight_path = str(_PREPROCESSING_DIR / "polarseg" / "SemKITTI_PolarSeg.pt")
-    segformer_weight_path = str(_PREPROCESSING_DIR / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth")
-    segformer_config_path = str(_PREPROCESSING_DIR / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py")
+    datadir = _REPO_ROOT / "datasetx"
+    root_dir = _REPO_ROOT / "datasetx"
+    select_route = "ugm_baru_with_magnetometer" # all # ringroad #ugm_baru
+    train_dir = root_dir / "train_routes"
+    val_dir = root_dir / "val_routes"
+    test_dir = root_dir / "test_routes" 
+    polarseg_weight_path = _REPO_ROOT / "common" / "polarseg" / "SemKITTI_PolarSeg.pt"
+    segformer_weight_path = _REPO_ROOT / "common" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth"
+    segformer_config_path = _REPO_ROOT / "common" / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py"
 
     # Image / BEV dimensions
     bev_h = lidbev_h = 128
@@ -55,7 +46,6 @@ class GlobalConfig:
     bias_basic = 15
     # bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
     bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
-    imu_harmonic_coeffs = np.array(yaml.safe_load(open(_REPO_ROOT / "common" / "imu_harmonic_coeffs.yml", "r")), dtype=float)
     magnetometer_calib = yaml.safe_load(open(_REPO_ROOT / "common" / "magnetometer_calib.yaml", "r"))
     rp1_close = 7  # min distance (m) to advance to the next route point
     route_gap_distance = 4  # in meters
@@ -70,8 +60,7 @@ class GlobalConfig:
 
     # Training
     inputs = 'segdep'  # segdep | seg | dep
-    logdir_name = 'log/xr20_' + inputs
-    logdir = str(_REPO_ROOT / logdir_name) + "_seq" + str(seq_len) + f"_{string_date}_route_{select_route}"
+    logdir = _REPO_ROOT / "log" / f"xr20_{inputs}_seq1_{string_date}_route_{select_route}"
     init_stop_counter = 30
     batch_size = 4
     lr = 1e-4  # learning rate (AdamW)

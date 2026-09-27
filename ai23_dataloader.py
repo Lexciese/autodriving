@@ -5,7 +5,7 @@ import yaml
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
-from pypcd4 import PointCloud
+from pypcd4.pypcd4 import PointCloud
 import h5py
 import hdf5plugin
 from collections import deque
@@ -15,13 +15,12 @@ from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from ai23_utility import compute_imu_yaw, harmonic_sinusosidal_fitting, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
 from ai23_utility import hampel_filter, bearing_filter
 from config import GlobalConfig
-from preprocess_lidar import PreprocessingLidar
+from preprocess_lidar import gen_bev_front_rear_seg_dep_numpy
 
 class KarrDataset(Dataset):
     def __init__(self, config: GlobalConfig, phase="train"):
         self.config: GlobalConfig = config
         self.phase = phase
-        self.preproc_lidar = PreprocessingLidar(config=config, use_tensor=False)
         self.seq_len = self.config.seq_len
         self.pred_len = self.config.pred_len
         self.data_rate = self.config.hz
@@ -99,7 +98,8 @@ class KarrDataset(Dataset):
 
             preload_path = f"{path}/seq{str(self.seq_len)}_pred{self.pred_len}_w{latlon_buffer['window_size']}.npy"
             if os.path.exists(preload_path):
-                self.preload_data = np.load(preload_path, allow_pickle=True)
+                loaded = np.load(preload_path, allow_pickle=True)
+                self.preload_data = loaded.item() if isinstance(loaded, np.ndarray) else loaded
                 self._load_preload(self.preload_data)
                 return
 
@@ -142,8 +142,8 @@ class KarrDataset(Dataset):
                         ptz = np.array(raw_pcd.pc_data['x'])
                         ptseg = np.array(seg_pcd[:, 0])
                         
-                        bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(
-                            ptx, pty, ptz, ptseg, use_tensor=False, config=self.config, bs=1
+                        bev_seg, bev_dep, front_seg, front_dep, _, _ = gen_bev_front_rear_seg_dep_numpy(
+                            ptx, pty, ptz, ptseg, cfg=self.config
                         )
                         
                         frame_node = frames_grp.create_group(filename)
@@ -219,7 +219,9 @@ class KarrDataset(Dataset):
                 self.preload_data["local_y"].append(seq_local_y)
                 self.preload_data["local_heading"].append(seq_local_heading)
             lidar_hdf5.close()
-            np.save(preload_path, self.preload_data)
+            np.save(preload_path, np.array(self.preload_data, dtype=object), allow_pickle=True)
+            loaded = np.load(preload_path, allow_pickle=True)
+            self.preload_data = loaded.item() if isinstance(loaded, np.ndarray) else loaded
             self._load_preload(self.preload_data)
 
     def __len__(self):
@@ -256,7 +258,7 @@ class KarrDataset(Dataset):
                 pty = np.array(raw_pcd.pc_data['z'])
                 ptz = np.array(raw_pcd.pc_data['x'])
                 ptseg = np.array(seg_pcd[:,0])
-                bev_seg, bev_dep, front_seg, front_dep, _, _ = self.preproc_lidar.gen_bev_front_rear_seg_dep(ptx, pty, ptz, ptseg, use_tensor=False, config=self.config, bs=1)
+                bev_seg, bev_dep, front_seg, front_dep, _, _ = gen_bev_front_rear_seg_dep_numpy(ptx, pty, ptz, ptseg, cfg=self.config)
             else:
                 frame_name = Path(seq_raw_pcd[i]).stem
                 bev_seg   = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/bev_seg"])[:]

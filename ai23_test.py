@@ -7,13 +7,14 @@ import numpy as np
 import cv2
 from torch import torch
 import yaml
+from pathlib import Path
 
 from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
 from ai23_model import xr20
-from ai23_dataloader import KarrDataset
+from ai23_dataloader import KarrDataset, SplitDataset
 
 # use the config from the log directory
 from config import GlobalConfig, select_logdir
@@ -153,6 +154,7 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
+    config.datadir = Path("/media/mf/SATA4TB/autodriving/datasetx")
 
 
     #SET GPU YANG AKTIF
@@ -165,17 +167,13 @@ def main():
     model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
     model.load_state_dict(torch.load(config.logdir / 'best_model.pth'))
 
-    karr_dataset = KarrDataset(config=config)
-    total_len = len(karr_dataset) - 3161
-    # train: 80%, validation: 10%, test: 10%
-    train_len = int(0.8 * total_len)
-    val_len = int(0.1 * total_len)
-    test_len = total_len - train_len - val_len
+    karr_dataset = KarrDataset(config=config, phase="train") # change to "test" when deploy
+    split_dataset = SplitDataset(karr_dataset)
+    total_len = split_dataset.total_len
+    train_set   = split_dataset.train_set
+    val_set     = split_dataset.val_set
+    test_set    = split_dataset.test_set
 
-    train_indices = list(range(3161, train_len+3161))
-    val_indices = list(range(train_len + 3161, train_len + val_len + 3161))
-    test_indices = list(range(train_len + val_len + 3161, total_len + 3161))
-    test_set = Subset(karr_dataset, test_indices)
     dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
     #test

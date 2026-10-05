@@ -14,7 +14,7 @@ torch.backends.cudnn.benchmark = True
 
 import shutil
 from ai23_model import xr20
-from ai23_dataloader import KarrDataset
+from ai23_dataloader import KarrDataset, SplitDataset
 from config import GlobalConfig
 import config as config_module
 
@@ -242,36 +242,18 @@ def main():
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=4, min_lr=1e-6)
 
     karr_dataset = KarrDataset(config=config)
-
-    # Calculate dataset lengths
-    # start from 3161 for "UGM Baru" Dataset
-    # total_len = len(karr_dataset) - 3161
-    # # train: 80%, validation: 10%, test: 10%
-    # train_len = int(0.8 * total_len)
-    # val_len = int(0.1 * total_len)
-    # test_len = total_len - train_len - val_len
-    # train_indices = list(range(3161, train_len+3161))
-    # val_indices = list(range(train_len + 3161, train_len + val_len + 3161))
-
-    total_len = len(karr_dataset)
-    # train: 80%, validation: 10%, test: 10%
-    train_len = int(0.8 * total_len)
-    val_len = int(0.1 * total_len)
-    test_len = total_len - train_len - val_len
-
-    train_indices = list(range(0, train_len))
-    val_indices = list(range(train_len, train_len + val_len))
-
-    train_set = Subset(karr_dataset, train_indices)
-    val_set = Subset(karr_dataset, val_indices)
-
+    split_dataset = SplitDataset(karr_dataset)
+    total_len = split_dataset.total_len
+    train_set   = split_dataset.train_set
+    val_set     = split_dataset.val_set
+    test_set    = split_dataset.test_set
 
     drop_last = True if len(train_set) % config.batch_size == 1 else False
 
     dataloader_train = DataLoader(train_set, batch_size=config.batch_size, shuffle=True, num_workers=6, pin_memory=True, drop_last=drop_last)
     dataloader_val = DataLoader(val_set, batch_size=config.batch_size, shuffle=False, num_workers=6, pin_memory=True)
 
-    print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {test_len}")
+    print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {len(test_set)}")
 
     if not (config.logdir / "trainval_log.csv").exists():
         print('TRAIN from the beginning!!!!!!!!!!!!!!!!')

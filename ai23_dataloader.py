@@ -88,7 +88,6 @@ class KarrDataset(Dataset):
                 'cos': deque(maxlen=5)
             }
 
-
             self.lidar_hdf5_path = path / "lidar" / "lidar_bev_front_seg_dep.hdf5"
             self.file_hdf5 = None
             lidar_hdf5 = h5py.File(self.lidar_hdf5_path, "a")
@@ -265,7 +264,7 @@ class KarrDataset(Dataset):
                 ptz = np.array(raw_pcd.pc_data['x'])
                 ptseg = np.array(seg_pcd[:,0])
                 bev_seg, bev_dep, front_seg, front_dep, _, _ = gen_bev_front_rear_seg_dep_numpy(ptx, pty, ptz, ptseg, cfg=self.config)
-            else:
+            else: # train or validation
                 frame_name = Path(seq_raw_pcd[i]).stem
                 bev_seg   = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/bev_seg"])[:]
                 bev_dep   = cast(h5py.Dataset, self.file_hdf5[f"frames/{frame_name}/bev_dep"])[:]
@@ -337,20 +336,51 @@ class KarrDataset(Dataset):
         self.local_heading += preload_data["local_heading"]
         self.velocity += preload_data["velocity"]
 
+class SplitDataset:
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.config  = dataset.config
+
+        self.route_list = sorted(p.name for p in self.config.datadir.iterdir() if p.is_dir())
+        if self.config.select_route != "all":
+            self.route_list = [self.config.select_route]
+
+        train_range = []
+        val_range = []
+        test_range = []
+        for route in self.route_list:
+            path = self.config.datadir / route / "split.yml"
+            split_yml = yaml.safe_load(open(path, "r"))
+            n_regions = split_yml["n_regions"]
+            train_split = split_yml["train"]
+            val_split = split_yml["val"]
+            test_split = split_yml["test"]
+
+            for i in range(n_regions):
+                for start, stop in train_split[i]:
+                    train_range.extend(range(start, stop))
+                for start, stop in val_split[i]:
+                    val_range.extend(range(start, stop))
+                for start, stop in test_split[i]:
+                    test_range.extend(range(start, stop))
+
+        self.train_set = Subset(self.dataset, train_range)
+        self.val_set = Subset(self.dataset, val_range)
+        self.test_set = Subset(self.dataset, test_range)
+        self.total_len = len(self.train_set) + len(self.val_set) + len(self.test_set)
+
 
 if __name__ == "__main__":
     config = GlobalConfig()
-    dataset = KarrDataset(config)
-    print(len(dataset))
-    subset_dataset = Subset(dataset, list(range(100)))
-    dataloader = DataLoader(subset_dataset, batch_size=4, shuffle=False, num_workers=4, drop_last=False)
-    print(len(dataloader))
-    for batch_idx, batch in enumerate(dataloader):
-        # waypoints = batch['waypoints']
-        print(f"Batch {batch_idx} Waypoints Shape/Structure:")
-        # print(waypoints)
-    iterator = iter(dataloader)
-    first_step = next(iter(iterator))
+    # dataset = KarrDataset(config)
+    # print(len(dataset))
+    # subset_dataset = Subset(dataset, list(range(100)))
+    # dataloader = DataLoader(subset_dataset, batch_size=4, shuffle=False, num_workers=4, drop_last=False)
+    # print(len(dataloader))
+    # for batch_idx, batch in enumerate(dataloader):
+    #     print(f"Batch {batch_idx} Waypoints Shape/Structure:")
+    # iterator = iter(dataloader)
+    # first_step = next(iter(iterator))
 
-    # for batch in dataloader:
-    #     print(batch)
+    split_dataset = SplitDataset(KarrDataset(config))
+

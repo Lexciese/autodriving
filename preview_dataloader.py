@@ -5,11 +5,18 @@ import numpy as np
 import torch
 import yaml
 from PIL import Image, ImageDraw, ImageFont
+from torch.utils.data import Dataset, Subset
 from tqdm import tqdm
 
 from config import GlobalConfig
-from ai23_dataloader import KarrDataset
+from ai23_dataloader import KarrDataset, SplitDataset
 from preprocess_util import plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp
+
+
+def resolve_sample_ref(dataset: Dataset, index: int):
+    if isinstance(dataset, Subset):
+        return dataset.dataset, dataset.indices[index]
+    return dataset, index
 
 
 def colorize_seg(sem_map, colmap):
@@ -37,8 +44,8 @@ def colorize_logdepth(depth_map):
     return np.uint8(np.clip(logdepth, 0, 255))
 
 
-def generate_frame(dataset: KarrDataset, index: int) -> np.ndarray:
-    configx = dataset.config
+def generate_frame(dataset: Dataset, config, index: int) -> np.ndarray:
+    configx = config
     sample = dataset[index]
 
     filenum = sample['filename']
@@ -77,7 +84,8 @@ def generate_frame(dataset: KarrDataset, index: int) -> np.ndarray:
     lidar_front_segcol = cv2.cvtColor(lidar_front_segcol, cv2.COLOR_RGB2BGR)
     lidar_front_depcol = cv2.cvtColor(lidar_front_depcol, cv2.COLOR_RGB2BGR)
 
-    rgb_front = cv2.imread(dataset.rgb[index][-1])
+    base_dataset, base_index = resolve_sample_ref(dataset, index)
+    rgb_front = cv2.imread(base_dataset.rgb[base_index][-1])
 
     rp_lidbev_frame = []
     rp_lidfront_frame = []
@@ -167,12 +175,12 @@ def generate_frame(dataset: KarrDataset, index: int) -> np.ndarray:
     return final_img
 
 
-def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0, output_path: str = None, fps: int = 10, min_frames: int = None, max_frames: int = None, num_workers: int = 8):
+def visualize_dataset(dataset: Dataset, config, mode: str = "single", index: int = 0, output_path: str = None, fps: int = 10, min_frames: int = None, max_frames: int = None, num_workers: int = 8):
     if mode == "single":
         if output_path is None:
             output_path = f"sample_shot_idx_{index}.jpg"
 
-        frame = generate_frame(dataset, index)
+        frame = generate_frame(dataset, config, index)
         cv2.imwrite(output_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
         print(f"[SINGLE MODE] Frame for index {index} saved to: {output_path}")
 
@@ -191,7 +199,7 @@ def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0
 
         print(f"[VIDEO MODE] Generating video for {max_frames-min_frames} frames at {fps} FPS...")
 
-        first_frame = generate_frame(dataset, 0)
+        first_frame = generate_frame(dataset, config, 0)
         h, w, _ = first_frame.shape
 
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
@@ -199,7 +207,7 @@ def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             frames_generator = executor.map(
-                lambda i: generate_frame(dataset, i),
+                lambda i: generate_frame(dataset, config, i),
                 range(min_frames, max_frames),
                 chunksize=1
             )
@@ -220,7 +228,12 @@ def visualize_dataset(dataset: KarrDataset, mode: str = "single", index: int = 0
 
 if __name__ == "__main__":
     config = GlobalConfig()
-    dataset = KarrDataset(config)
+    karr_dataset = KarrDataset(config)
+    split_dataset = SplitDataset(karr_dataset)
+
+    SPLIT = "val"  # "train" "val" "test"
+    dataset = getattr(split_dataset, f"{SPLIT}_set")
+    print(f"Split '{SPLIT}': {len(dataset)} samples")
 
     MODE = "video"  # "single" "video"
     index = 554
@@ -228,6 +241,7 @@ if __name__ == "__main__":
     if MODE == "single":
         visualize_dataset(
             dataset=dataset,
+            config=config,
             mode="single",
             index=index,
             output_path=f"sample_{index}.jpg"
@@ -235,9 +249,10 @@ if __name__ == "__main__":
     elif MODE == "video":
         visualize_dataset(
             dataset=dataset,
+            config=config,
             mode="video",
             fps=10,
-            output_path=f"dataset_preview_{config.select_route}.avi",
+            output_path=f"dataset_preview_{config.select_route}_{SPLIT}.avi",
             min_frames= 0,
             num_workers=8
         )

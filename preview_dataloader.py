@@ -237,7 +237,7 @@ if __name__ == "__main__":
             dataset=dataset,
             mode="video",
             fps=10,
-            output_path="full_dataset_preview.avi",
+            output_path=f"dataset_preview_{config.select_route}.avi",
             min_frames= 0,
             num_workers=8
         )

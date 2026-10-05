@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from PIL import ImageFont
 
-_REPO_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path("/media/mf/SATA4TB/autodriving")
 
 class GlobalConfig:
     # General / device
@@ -21,15 +21,11 @@ class GlobalConfig:
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
 
     # Data paths
-    datadir = _REPO_ROOT / "datasetx"
-    root_dir = _REPO_ROOT / "datasetx"
-    select_route = "ugm_baru_with_magnetometer" # all # ringroad #ugm_baru
-    train_dir = root_dir / "train_routes"
-    val_dir = root_dir / "val_routes"
-    test_dir = root_dir / "test_routes" 
-    polarseg_weight_path = _REPO_ROOT / "common" / "polarseg" / "SemKITTI_PolarSeg.pt"
-    segformer_weight_path = _REPO_ROOT / "common" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth"
-    segformer_config_path = _REPO_ROOT / "common" / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py"
+    datadir = PROJECT_ROOT / "datasetx"
+    select_route = "ugm_baru" # all # ringroad #ugm_baru
+    polarseg_weight_path = PROJECT_ROOT / "common" / "polarseg" / "SemKITTI_PolarSeg.pt"
+    segformer_weight_path = PROJECT_ROOT / "common" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth"
+    segformer_config_path = PROJECT_ROOT / "common" / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py"
 
     # Image / BEV dimensions
     bev_h = lidbev_h = 128
@@ -46,7 +42,7 @@ class GlobalConfig:
     bias_basic = 15
     # bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
     bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
-    magnetometer_calib = yaml.safe_load(open(_REPO_ROOT / "common" / "magnetometer_calib.yaml", "r"))
+    magnetometer_calib = yaml.safe_load(open(PROJECT_ROOT / "common" / "magnetometer_calib.yaml", "r"))
     rp1_close = 7  # min distance (m) to advance to the next route point
     route_gap_distance = 4  # in meters
     n_buffer = 0  # moving-average buffer (seconds)
@@ -60,7 +56,7 @@ class GlobalConfig:
 
     # Training
     inputs = 'segdep'  # segdep | seg | dep
-    logdir = _REPO_ROOT / "log" / f"xr20_{inputs}_seq1_{string_date}_route_{select_route}"
+    logdir = PROJECT_ROOT / "log" / f"xr20_{inputs}_seq1_{string_date}_route_{select_route}"
     init_stop_counter = 30
     batch_size = 4
     lr = 1e-4  # learning rate (AdamW)
@@ -202,7 +198,7 @@ class GlobalConfig:
 
 
 def select_logdir(log_root=None):
-    log_root = Path(log_root) if log_root else (_REPO_ROOT / "log")
+    log_root = Path(log_root) if log_root else (PROJECT_ROOT / "log")
     runs = [d for d in log_root.iterdir() if d.is_dir()] if log_root.is_dir() else []
     if not runs:
         raise FileNotFoundError(f"No log runs found under {log_root}")

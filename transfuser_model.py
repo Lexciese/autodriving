@@ -31,9 +31,6 @@ class PIDController(object):
         out_control = self._K_P * error + self._K_I * integral + self._K_D * derivative
         return out_control
 
-
-
-
 class ImageCNN(nn.Module):
     """ 
     Encoder network for image input list.
@@ -67,7 +64,6 @@ def normalize_imagenet(x):
     x[:, 2] = (x[:, 2] - 0.406) / 0.225
     return x
 
-
 class LidarEncoder(nn.Module):
     """
     Encoder network for LiDAR input list
@@ -92,7 +88,6 @@ class LidarEncoder(nn.Module):
             features += lidar_feature
 
         return features
-
 
 class SelfAttention(nn.Module):
     """
@@ -132,7 +127,6 @@ class SelfAttention(nn.Module):
         y = self.resid_drop(self.proj(y))
         return y
 
-
 class Block(nn.Module):
     """ an unassuming Transformer block """
 
@@ -156,7 +150,6 @@ class Block(nn.Module):
 
         return x
 
-
 class GPT(nn.Module):
     """  the full GPT language model, with a context size of block_size """
 
@@ -174,7 +167,7 @@ class GPT(nn.Module):
         self.pos_emb = nn.Parameter(torch.zeros(1, (self.config.n_views + 1) * seq_len * vert_anchors * horz_anchors, n_embd))
         
         # velocity embedding
-        self.vel_emb = nn.Linear(2, n_embd) #inputnya dari 1 ganti ke 2 karena kecepatan LR angular speed
+        self.vel_emb = nn.Linear(1, n_embd) #inputnya dari 1 ganti ke 2 karena kecepatan LR angular speed
         self.drop = nn.Dropout(embd_pdrop)
 
         # transformer
@@ -266,7 +259,6 @@ class GPT(nn.Module):
         lidar_tensor_out = x[:, self.config.n_views*self.seq_len:, :, :, :].contiguous().view(bz * self.seq_len, -1, h, w)
         
         return image_tensor_out, lidar_tensor_out
-
 
 class Encoder(nn.Module):
     """

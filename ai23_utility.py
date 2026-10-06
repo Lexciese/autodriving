@@ -100,6 +100,32 @@ def colorize_depth(depth_map):
     visdep = np.repeat(norm_dep[:, :, np.newaxis], 3, axis=2) * 255 #normalisasi ke 0 - 255
     return visdep
 
+def lidar_to_histogram_features(lidar, configx):
+    def splat_points(point_cloud):
+        #128 x 256 grid
+        x_meters_max = int(configx.cover_area_lr)
+        y_meters_max = int((configx.cover_area_f[1] - configx.cover_area_f[0]) / 2)
+        pixels_per_meter = int(configx.bev_w/configx.cover_area_lr)
+        hist_max_per_pixel = 5
+        xbins = np.linspace(-x_meters_max, x_meters_max+1, x_meters_max*pixels_per_meter+1)
+        ybins = np.linspace(-y_meters_max, 0, y_meters_max*pixels_per_meter+1)
+        hist = np.histogramdd(point_cloud[...,:2], bins=(ybins, xbins))[0]
+        hist[hist>hist_max_per_pixel] = hist_max_per_pixel
+        overhead_splat = hist/hist_max_per_pixel
+        return overhead_splat
+
+    below = lidar[lidar[...,2]<=0] #di bawah atau sama dengan garis 0 horizon lidar
+    above = lidar[lidar[...,2]>0] #di atas garis 0 horizon lidar
+    below_features = splat_points(below)
+    above_features = splat_points(above)
+    features = np.stack([below_features, above_features], axis=-1)
+    features = features.astype(np.float32) #np.transpose(features, (2, 0, 1)).astype(np.float32)
+    return features
+
+def resize_img(image, resize_w=256, resize_h=128):
+    resized_image = cv2.resize(image, (resize_w, resize_h), interpolation=cv2.INTER_NEAREST)
+    return resized_image
+
 def resizecrop_matrix(image, WH_resized=[256, 128], D3=True, crop_HW=[128, 256]):
 
     #resize image

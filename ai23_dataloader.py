@@ -11,7 +11,7 @@ from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from ai23_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, cls2one_hot, colorize_depth
+from ai23_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, resize_img, cls2one_hot, colorize_depth
 from ai23_utility import hampel_filter, bearing_filter
 from config import GlobalConfig
 from preprocess_lidar import gen_bev_front_rear_seg_dep_numpy
@@ -235,6 +235,7 @@ class KarrDataset(Dataset):
     def __getitem__(self, index):
         data = dict()
         data['filename'] = self.filename[index]
+        data['rgb'] = []
         data['bev_deps'] = []
         data['bev_segs'] = []
         data['front_deps'] = []
@@ -275,6 +276,7 @@ class KarrDataset(Dataset):
             data['bev_deps'].append(bev_dep[0])
             data['front_segs'].append(front_seg[0])
             data['front_deps'].append(front_dep[0])
+            data['rgb'].append(np.array(resize_img(cv2.imread(seq_rgb[i]), resize_w=self.config.front_w , resize_h=self.config.front_h)).transpose(2,0,1))
 
         # current ego robot position dan heading di index 0
         ego_local_x = seq_local_x[0]

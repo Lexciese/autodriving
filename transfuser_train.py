@@ -13,137 +13,12 @@ torch.backends.cudnn.benchmark = True
 
 import shutil
 from transfuser_model import transfuser
-from ai23_dataloader import KarrDataset, SplitDataset#, gen_bev_front_seg_dep#, custom_collate
+from transfuser_dataloader import KarrDataset, SplitDataset#, gen_bev_front_seg_dep#, custom_collate
+from transfuser_config import GlobalConfig
 from torch.utils.tensorboard import SummaryWriter
 # import random
 # random.seed(0)
 # torch.manual_seed(0)
-
-import numpy as np
-import torch
-import os
-from datetime import datetime
-from pathlib import Path
-
-PROJECT_ROOT = Path("/media/mf/SATA4TB/autodriving")
-
-class GlobalConfig:
-    now = datetime.now()
-    string_date = now.strftime("%d_%m_%Y-%H_%M")
-    bev_h = 128
-    bev_w = 256
-    front_h = bev_h
-    front_w = bev_w
-    hz = 4 #1 detik ada berapa sample yang direcord
-
-    #for training
-    gpu_id = '0'
-    model = 'transfuser'
-
-    datadir = PROJECT_ROOT / "datasetx"
-    select_route = "ugm_baru"
-    polarseg_weight_path = PROJECT_ROOT / "common" / "polarseg" / "SemKITTI_PolarSeg.pt"
-    segformer_weight_path = PROJECT_ROOT / "common" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth"
-    segformer_config_path = PROJECT_ROOT / "common" / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py"
-
-    init_stop_counter = 30
-    batch_size = 10
-    lr = 1e-4 # learning rate #pakai AdamW
-    weight_decay = 1e-3
-    n_fmap_r18 = [64, 64, 128, 256, 512]
-    n_fmap_r34 = [64, 64, 128, 256, 512] #sama dengan resnet18
-
-	# Data
-    seq_len = 1 # jumlah input seq
-    pred_len = 4 # future waypoints predicted
-    n_wp = pred_len #waypoints
-    logdir = PROJECT_ROOT / "log" / f"transfuser_{model}_seq{seq_len}_{string_date}_route_{select_route}"
-
-    #buat transfuser
-    n_views = 1 # no. of camera views
-    vert_anchors = 4#8
-    horz_anchors = 8
-    anchors = vert_anchors * horz_anchors
-    n_embd = 512
-    block_exp = 4
-    n_layer = 8
-    n_head = 4
-    n_scale = 4
-    embd_pdrop = 0.1
-    resid_pdrop = 0.1
-    attn_pdrop = 0.1
-
-
-    # Controller
-    turn_KP = 0.5
-    turn_KI = 0.25
-    turn_KD = 0.15
-    turn_n = 15 # buffer size
-
-    speed_KP = 1.5
-    speed_KI = 0.25
-    speed_KD = 0.5
-    speed_n = 15 # buffer size
-
-    max_throttle = 1.0 # upper limit on throttle signal value in dataset
-    wheel_radius = 0.15#radius roda robot dalam meter
-    # brake_speed = 0.4 # desired speed below which brake is triggered
-    # brake_ratio = 1.1 # ratio of speed to desired speed at which brake is triggered
-    # clip_delta = 0.25 # maximum change in speed input to logitudinal controller
-    min_act_thrt = 0.1 #minimum nilai suatu throttle dianggap aktif diinjak
-    err_angle_mul = 0.075
-    des_speed_mul = 1.75
-
-    #buat preprocessing data
-    gpu_device = torch.device("cuda:0")
-    dtype = torch.float32
-    cover_area_lr = 16 #kiri - kanan
-    cover_area_f = [1.25, 17.25] #posisi camera -> area interest max
-    
-    #lidar setting, cek HDL-32E dan VLP32C LiDAR sensor datasheet
-    lidar_sensor = "rs32" #vlp32c hdl32e
-    if lidar_sensor == "hdl32e":
-        v_fov = [-30.67, 10.67] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]
-        dep_max = 100#/1.25 #dalam meter, baca datasheet np.sqrt(cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (cover_area_up[1]-((cover_area_up[1]-cover_area_up[0])/2))**2)
-        v_res_div = 55
-    elif lidar_sensor == "rs32":
-        v_fov = [-16, 15]
-        dep_max = 150
-        v_res_div = 60
-    else: #"vlp32c"
-        v_fov = [-25, 15] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]
-        dep_max = 200#/1.25 #dalam meter, baca datasheet np.sqrt(cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (cover_area_up[1]-((cover_area_up[1]-cover_area_up[0])/2))**2)
-        v_res_div = 55
-    max_intensity = 100.0
-    # v_fov_down = -1*np.radians(2)
-    # v_fov_up = np.radians(24.9)
-    # n_laser = 32
-    # lidar_rps = 10 #rotasi per detik --> 600 rpm / 60 detik
-    h_fov = 360
-    # v_fov = [-25, 15] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]
-    v_fov_total = -v_fov[0] + v_fov[1]
-
-    v_res = v_fov_total/v_res_div         #n_laser #front_h  # 1.33 #vertical resolution
-    h_res = h_fov/(front_w*2)              #0.35 #horizontal resolution
-    # Convert to Radians
-    v_res_rad = v_res * (np.pi/180)
-    h_res_rad = h_res * (np.pi/180)
-    # y_fudge = 5
-
-    #untuk front_dep dan bev_dep
-    #100 untuk HDL32E, 200 untuk VLP32C
-    # dep_max = 200#/1.25 #dalam meter, baca datasheet np.sqrt(cover_area_lr**2 + (cover_area_f[1]-cover_area_f[0])**2 + (cover_area_up[1]-((cover_area_up[1]-cover_area_up[0])/2))**2)
-    dep_min = cover_area_f[0]
-
-    #other, buat join_img dll
-    fps = 20
-    rgb_res_ori = [720, 1280] #HxW
-    scale_w = rgb_res_ori[1]/front_w
-    scale_h = rgb_res_ori[0]/front_h
-
-    def __init__(self, **kwargs):
-        for k,v in kwargs.items():
-            setattr(self, k, v)
 
 #Class untuk penyimpanan dan perhitungan update loss
 class AverageMeter(object):
@@ -179,12 +54,14 @@ def train(data_loader, model, config, writer, cur_epoch, optimizer):
         cur_step = cur_epoch*total_batch + batch_ke
 
         #pindah ke torch gpu device dulu
-        rgbs = []
-        pt_cld_hists = []
+        rgb = []
+        pcd = []
         for i in range(0, config.seq_len):
-            rgbs.append(torch.tensor(data['rgbs'][i]).to(config.gpu_device, dtype=config.dtype))
-            pt_cld_hists.append(torch.tensor(data['pt_cld_hists'][i]).to(config.gpu_device, dtype=config.dtype))
-        gt_velocity = torch.stack(data['lr_velo'], dim=1).to(config.gpu_device, dtype=config.dtype)
+            rgb.append(torch.tensor(data['rgb'][i]).to(config.gpu_device, dtype=config.dtype))
+            pcd.append(torch.tensor(data['pcd'][i]).to(config.gpu_device, dtype=config.dtype))
+        gt_velocity = data['velocity'].to(config.gpu_device, dtype=config.dtype)
+        if gt_velocity.dim() == 1:
+            gt_velocity = gt_velocity.unsqueeze(1)
         rp1 = torch.stack(data['rp1'], dim=1).to(config.gpu_device, dtype=config.dtype)
         rp2 = torch.stack(data['rp2'], dim=1).to(config.gpu_device, dtype=config.dtype)
         gt_waypoints = [torch.stack(data['waypoints'][j], dim=1).to(config.gpu_device, dtype=config.dtype) for j in range(0, config.pred_len)]
@@ -192,9 +69,9 @@ def train(data_loader, model, config, writer, cur_epoch, optimizer):
 
         #forward pass
         if config.model == 'transfuser':
-            pred_wp = model(rgbs, pt_cld_hists, rp1, rp2, gt_velocity)
+            pred_wp = model(rgb, pcd, rp1, rp2, gt_velocity)
         else:
-            pred_wp = model(rgbs, pt_cld_hists, rp1, rp2)
+            pred_wp = model(rgb, pcd, rp1, rp2)
 
         #compute loss
         loss_wp = F.l1_loss(pred_wp, gt_waypoints)
@@ -246,12 +123,14 @@ def validate(data_loader, model, config, writer, cur_epoch):
             cur_step = cur_epoch*total_batch + batch_ke
 
             #pindah ke torch gpu device dulu
-            rgbs = []
-            pt_cld_hists = []
+            rgb = []
+            pcd = []
             for i in range(0, config.seq_len):
-                rgbs.append(torch.tensor(data['rgbs'][i]).to(config.gpu_device, dtype=config.dtype))
-                pt_cld_hists.append(torch.tensor(data['pt_cld_hists'][i]).to(config.gpu_device, dtype=config.dtype))
-            gt_velocity = torch.stack(data['lr_velo'], dim=1).to(config.gpu_device, dtype=config.dtype)
+                rgb.append(torch.tensor(data['rgb'][i]).to(config.gpu_device, dtype=config.dtype))
+                pcd.append(torch.tensor(data['pcd'][i]).to(config.gpu_device, dtype=config.dtype))
+            gt_velocity = data['velocity'].to(config.gpu_device, dtype=config.dtype)
+            if gt_velocity.dim() == 1:
+                gt_velocity = gt_velocity.unsqueeze(1)
             rp1 = torch.stack(data['rp1'], dim=1).to(config.gpu_device, dtype=config.dtype)
             rp2 = torch.stack(data['rp2'], dim=1).to(config.gpu_device, dtype=config.dtype)
             gt_waypoints = [torch.stack(data['waypoints'][j], dim=1).to(config.gpu_device, dtype=config.dtype) for j in range(0, config.pred_len)]
@@ -259,9 +138,9 @@ def validate(data_loader, model, config, writer, cur_epoch):
 
             #forward pass
             if config.model == 'transfuser':
-                pred_wp = model(rgbs, pt_cld_hists, rp1, rp2, gt_velocity)
+                pred_wp = model(rgb, pcd, rp1, rp2, gt_velocity)
             else:
-                pred_wp = model(rgbs, pt_cld_hists, rp1, rp2)
+                pred_wp = model(rgb, pcd, rp1, rp2)
 
             #compute loss
             loss_wp = F.l1_loss(pred_wp, gt_waypoints)
@@ -317,14 +196,22 @@ def main():
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=4, min_lr=1e-6)
 
     #BUAT DATA BATCH
-    train_set = WHILL_Data(data_root=config.train_dir, conditions=config.train_conditions, config=config)
-    val_set = WHILL_Data(data_root=config.val_dir, conditions=config.val_conditions, config=config)
-    dataloader_train = DataLoader(train_set, batch_size=config.batch_size, shuffle=True, num_workers=4, pin_memory=True) #, collate_fn=custom_collate
-    dataloader_val = DataLoader(val_set, batch_size=config.batch_size, shuffle=False, num_workers=4, pin_memory=True) #, collate_fn=custom_collate
-    # print(len(dataloader_train))
+    karr_dataset = KarrDataset(config=config)
+    split_dataset = SplitDataset(karr_dataset)
+    total_len = split_dataset.total_len
+    train_set   = split_dataset.train_set
+    val_set     = split_dataset.val_set
+    test_set    = split_dataset.test_set
+
+    drop_last = True if len(train_set) % config.batch_size == 1 else False
+
+    dataloader_train = DataLoader(train_set, batch_size=config.batch_size, shuffle=True, num_workers=6, pin_memory=True, drop_last=drop_last)
+    dataloader_val = DataLoader(val_set, batch_size=config.batch_size, shuffle=False, num_workers=6, pin_memory=True)
+
+    print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {len(test_set)}")
     
     #cek retrain atau tidak
-    if not os.path.exists(config.logdir+"/trainval_log.csv"):
+    if not os.path.exists(config.logdir / "trainval_log.csv"):
         print('TRAIN from the beginning!!!!!!!!!!!!!!!!')
         os.makedirs(config.logdir, exist_ok=True)
         print('Created dir:', config.logdir)
@@ -336,22 +223,22 @@ def main():
         print('Continue training!!!!!!!!!!!!!!!!')
         print('Loading checkpoint from ' + config.logdir)
         #baca log history training sebelumnya
-        log_trainval = pd.read_csv(config.logdir+"/trainval_log.csv")
+        log_trainval = pd.read_csv(config.logdir / "trainval_log.csv")
         # replace variable2 ini
         # print(log_trainval['epoch'][-1:])
         curr_ep = int(log_trainval['epoch'][-1:]) + 1
         lowest_score = float(np.min(log_trainval['val_loss']))
         stop_count = int(log_trainval['stop_counter'][-1:])
         # Load checkpoint
-        model.load_state_dict(torch.load(os.path.join(config.logdir, 'recent_model.pth')))
-        optima.load_state_dict(torch.load(os.path.join(config.logdir, 'recent_optim.pth')))
+        model.load_state_dict(torch.load(config.logdir / 'recent_model.pth'))
+        optima.load_state_dict(torch.load(config.logdir / 'recent_optim.pth'))
         #update direktori dan buat tempat penyimpanan baru
-        config.logdir += "/retrain"
+        config.logdir = config.logdir / "retrain"
         os.makedirs(config.logdir, exist_ok=True)
         print('Created new retrain dir:', config.logdir)
     
     #copykan config file
-    shutil.copyfile('config.py', config.logdir+'/config.py')
+    shutil.copyfile('config.py', config.logdir / 'config.py')
 
     #buat dictionary log untuk menyimpan training log di CSV
     log = OrderedDict([
@@ -395,16 +282,16 @@ def main():
         print('elapsed time: %.4f sec' % (elapsed_time))
         
         #save recent model dan optimizernya
-        torch.save(model.state_dict(), os.path.join(config.logdir, 'recent_model.pth'))
-        torch.save(optima.state_dict(), os.path.join(config.logdir, 'recent_optim.pth'))
+        torch.save(model.state_dict(), config.logdir / 'recent_model.pth')
+        torch.save(optima.state_dict(), config.logdir / 'recent_optim.pth')
 
         #save model best only
         if val_log['v_total_l'] < lowest_score:
             print("v_total_l: %.4f < lowest sebelumnya: %.4f" % (val_log['v_total_l'], lowest_score))
             print("model terbaik disave!")
-            torch.save(model.state_dict(), os.path.join(config.logdir, 'best_model.pth'))
-            torch.save(optima.state_dict(), os.path.join(config.logdir, 'best_optim.pth'))
-            # torch.save(optima_lw.state_dict(), os.path.join(config.logdir, 'best_optim_lw.pth'))
+            torch.save(model.state_dict(), config.logdir / 'best_model.pth')
+            torch.save(optima.state_dict(), config.logdir / 'best_optim.pth')
+            # torch.save(optima_lw.state_dict(), config.logdir / 'best_optim_lw.pth')
             #v_total_l sekarang menjadi lowest_score
             lowest_score = val_log['v_total_l']
             #reset stop counter

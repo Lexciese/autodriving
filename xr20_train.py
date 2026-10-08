@@ -13,8 +13,8 @@ from torch.utils.tensorboard import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 import shutil
-from ai23_model import xr20
-from ai23_dataloader import KarrDataset, SplitDataset
+from xr20_model import xr20
+from xr20_dataloader import KarrDataset, SplitDataset
 from config import GlobalConfig
 import config as config_module
 

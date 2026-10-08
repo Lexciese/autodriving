@@ -11,8 +11,8 @@ from collections import deque
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from ai23_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, resize_img, cls2one_hot, colorize_depth
-from ai23_utility import hampel_filter, bearing_filter
+from xr20_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, resize_img, cls2one_hot, colorize_depth
+from xr20_utility import hampel_filter, bearing_filter
 from config import GlobalConfig
 from preprocess_lidar import gen_bev_front_rear_seg_dep_numpy
 

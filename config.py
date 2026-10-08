@@ -58,7 +58,7 @@ class GlobalConfig:
     inputs = 'segdep'  # segdep | seg | dep
     logdir = PROJECT_ROOT / "log" / f"xr20_{inputs}_seq1_{string_date}_route_{select_route}"
     init_stop_counter = 30
-    batch_size = 4
+    batch_size = 10
     lr = 1e-4  # learning rate (AdamW)
     weight_decay = 1e-3
     # MGN (loss-weighting) parameters

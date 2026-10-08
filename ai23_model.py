@@ -12,16 +12,28 @@ def kaiming_init(m):
     elif isinstance(m, nn.Linear):
         nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
 
+class DSConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, dilation, padding, stride):
+        super().__init__()
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, groups=in_channels)
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        
+
+    def forward(self, x):
+        out = self.depthwise(x)
+        out = self.pointwise(out)
+        return out
+
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, dilation, padding, stride):
         super().__init__()
         self.block1 = nn.Sequential(
-            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, dilation=dilation, stride=stride, padding=padding, padding_mode='zeros'),
+            DSConv(in_channels, out_channels, kernel_size, dilation, padding, stride),
             nn.BatchNorm2d(out_channels),
             nn.ReLU()
         )
         self.block2 = nn.Sequential(
-            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel_size, dilation=dilation, stride=stride, padding=padding, padding_mode='zeros'),
+            DSConv(out_channels, out_channels, kernel_size, dilation, padding, stride),
             nn.BatchNorm2d(out_channels),
             nn.ReLU()
         )
@@ -32,6 +44,7 @@ class DoubleConv(nn.Module):
         x = self.block1(x)
         y = self.block2(x)
         return y
+
 
 class EncoderBlock(nn.Module):
     def __init__(self, in_channels, feature_map, is_bev):

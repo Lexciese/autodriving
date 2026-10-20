@@ -17,7 +17,6 @@ class DSConv(nn.Module):
         super().__init__()
         self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, groups=in_channels)
         self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        
 
     def forward(self, x):
         out = self.depthwise(x)
@@ -30,12 +29,14 @@ class DoubleConv(nn.Module):
         self.block1 = nn.Sequential(
             DSConv(in_channels, out_channels, kernel_size, dilation, padding, stride),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Dropout2d(0.1)
         )
         self.block2 = nn.Sequential(
             DSConv(out_channels, out_channels, kernel_size, dilation, padding, stride),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Dropout2d(0.1)
         )
         self.block1.apply(kaiming_init)
         self.block2.apply(kaiming_init)

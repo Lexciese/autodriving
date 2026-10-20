@@ -2,6 +2,8 @@ from typing import cast
 import cv2
 import yaml
 import numpy as np
+import copy
+import random
 from pathlib import Path
 from tqdm import tqdm
 from pypcd4.pypcd4 import PointCloud
@@ -9,6 +11,7 @@ import h5py
 import hdf5plugin
 from collections import deque
 import torch
+import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
 from ai23_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, resize_img, cls2one_hot, colorize_depth

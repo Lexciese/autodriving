@@ -1,121 +1,93 @@
-# PENGEMBANGAN DARI: https://colab.research.google.com/drive/1ssW3JFR1_JakjDcP2vlWdeZiW15MDGDF?authuser=1#scrollTo=WfFQU0I_zG_-
-
-from pypcd import pypcd #https://github.com/dimatura/pypcd/issues/7 #pip3 install --upgrade git+https://github.com/klintan/pypcd.git 
-from torch import torch
-torch.backends.cudnn.benchmark = True
-from PIL import Image
 import cv2
 import numpy as np
-from scipy import interpolate
-from preprocess_util import colorize_seg, cls2one_hot, colorize_depth, colorize_depthlog
+from tqdm import tqdm
+from PIL import Image
+from torch import torch
+from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
+
 from config import GlobalConfig
+from preprocess_util import cls2one_hot, colorize_depth, colorize_seg
+
+torch.backends.cudnn.benchmark = True
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 configx = GlobalConfig()
 
-""""""
-#INIT MODEL
-#pip install -q git+https://github.com/huggingface/transformers.git
-#cek pretrained model di sini https://huggingface.co/models?search=mask2former
-from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
-processor = AutoImageProcessor.from_pretrained("facebook/mask2former-swin-large-cityscapes-semantic")
-model = Mask2FormerForUniversalSegmentation.from_pretrained("facebook/mask2former-swin-large-cityscapes-semantic")
+# 1. INIT MODEL & MOVE TO GPU
+processor = AutoImageProcessor.from_pretrained(
+    "facebook/mask2former-swin-large-cityscapes-semantic"
+)
+model = Mask2FormerForUniversalSegmentation.from_pretrained(
+    "facebook/mask2former-swin-large-cityscapes-semantic"
+).to(device)
+model.eval()
 
-
-#loop pada semua route
+# Loop across routes
 route_list = sorted(p.name for p in configx.datadir.iterdir() if p.is_dir())
 if configx.select_route != "all":
     route_list = [configx.select_route]
     print(f"only route: {configx.select_route} is selected")
+
 for route in route_list:
-    # if route in route_listx: #kalau termasuk route yang tidak diproses, skip
-    #     continue
     route_path = configx.datadir / route
     ddir_meta = route_path / "meta"
     ddir_rgb = route_path / "camera" / "rgb"
     ddir_depmap = route_path / "camera" / "depth" / "map"
-    ddir_depcld = route_path / "camera" / "depth" / "cld"
-    ddir_depcld2 = route_path / "camera" / "depth" / "cld2"
 
-    #buat direktori buat nyimpan depth, segmentation GT, dan lainnya
     ddir_depimg = route_path / "camera" / "depth" / "img"
     ddir_seg = route_path / "camera" / "seg" / "map"
     ddir_segimg = route_path / "camera" / "seg" / "img"
-    
+
     ddir_depimg.mkdir(parents=True, exist_ok=True)
     ddir_seg.mkdir(parents=True, exist_ok=True)
     ddir_segimg.mkdir(parents=True, exist_ok=True)
 
-
     file_list = sorted(p.name for p in ddir_meta.iterdir())
 
-    with torch.no_grad():
-        for filex in file_list:
-            file_name = filex[:-3]+"png"
-            if (ddir_depimg / file_name).is_file() and (ddir_segimg / file_name).is_file():
-                print("file exist")
-            else:
-                #VISUALIZE DEPTH
-                #FRONT
-                """
-                # load depth cloud
-                dep_pc = pypcd.PointCloud.from_path(str(ddir_depcld / f"{file_name[:-3]}pcd"))
-                lid_x = dep_pc.pc_data['x']
-                lid_y = dep_pc.pc_data['y']
-                lid_z = dep_pc.pc_data['z']
-                pt_cloud = np.zeros(lid_x.shape[0] + lid_y.shape[0] + lid_z.shape[0], dtype=np.float32)
-                pt_cloud[0::3] = lid_x
-                pt_cloud[1::3] = lid_y
-                pt_cloud[2::3] = lid_z
-                pt_cloud = pt_cloud.astype('float32').reshape((-1, 3))
-                print(pt_cloud.shape)
-                print(pt_cloud.max())
-                print(pt_cloud.min())
-                
-                dep_pc2 = np.load(ddir_depcld2 / f"{file_name[:-3]}npy")
-                print(dep_pc2['x'].shape)
-                print(dep_pc2['x'].max())
-                print(dep_pc2['x'].min())
-                
-                print("-------------------------------------------------------")
-                """
+    with torch.inference_mode():
+        for filex in tqdm(file_list, desc="Processing camsegdep Files", unit="file"):
+            file_name = filex[:-3] + "png"
 
-                """"""
-                depmap = np.load(ddir_depmap / f"{file_name[:-3]}npy")
-                depmap = np.nan_to_num(depmap, nan=0.3, posinf=10.0, neginf=0.3)
-                # print(depmap.shape)
-                # print(depmap.min())
-                # print(depmap.max())
-                # print(depmap)
-                depimg = colorize_depth(depmap)
-                cv2.imwrite(str(ddir_depimg / file_name), depimg)
-                
-                """
-                depmap = np.load(ddir_depmap / f"{file_name[:-3]}npy")
-                depmap = np.nan_to_num(depmap, nan=np.nan, posinf=10, neginf=0.3)
-                mask = np.where(~np.isnan(depmap))
-                interp = interpolate.NearestNDInterpolator(np.transpose(mask), depmap[mask])
-                depmap_clean = interp(*np.indices(depmap.shape))
-                depimg = colorize_depthlog(depmap_clean)
-                cv2.imwrite(str(ddir_depimg / file_name), depimg)
-                """
-                
+            if (ddir_depimg / file_name).is_file() and (
+                ddir_segimg / file_name
+            ).is_file():
+                continue
 
-                """"""
-                #VISUALIZE SEGMENTATION
-                #FRONT CAMERA
-                image = Image.open(ddir_rgb / file_name)
-                inputs = processor(images=image, return_tensors="pt")
-                outputs = model(**inputs)
-                seg_pred = processor.post_process_semantic_segmentation(outputs, target_sizes=[image.size[::-1]])[0]
-                #save hasil prediksi sebagai GT, nama filenya sama dengan rgb
-                cv2.imwrite(str(ddir_seg / file_name), seg_pred.cpu().detach().numpy())
-                
-                #CETAK GAMBAR BERWARNA SS dan SDC dalam format RGB JUGA
-                seg_gt = cls2one_hot(cv2.imread(str(ddir_seg / file_name))+1, n_class=len(configx.cityscapes_palette)) #jadinya 19xHxW one hot
-                seg_gt = torch.from_numpy(np.array(np.expand_dims(seg_gt, axis=0))).to(configx.gpu_device) #jadiin tensor, tambah 1 axis buat batch
-                fro_segcol = colorize_seg(seg_gt.cpu().detach().numpy(), configx.cityscapes_palette)
+            depmap = np.load(ddir_depmap / f"{file_name[:-3]}npy")
+            depmap = np.nan_to_num(depmap, nan=0.3, posinf=10.0, neginf=0.3)
+            depimg = colorize_depth(depmap)
+            cv2.imwrite(str(ddir_depimg / file_name), depimg)
 
-                #simpan gambar             #switch RGB BGR
-                cv2.imwrite(str(ddir_segimg / file_name), fro_segcol[:,:,[2,1,0]])
-                print(ddir_seg / file_name)
-                
-           
+            image = Image.open(ddir_rgb / file_name)
+
+            inputs = processor(images=image, return_tensors="pt")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+
+            outputs = model(**inputs)
+
+            seg_pred = processor.post_process_semantic_segmentation(
+                outputs, target_sizes=[image.size[::-1]]
+            )[0]
+
+            seg_pred_np = seg_pred.cpu().numpy()
+
+            cv2.imwrite(str(ddir_seg / file_name), seg_pred_np)
+
+            seg_pred_3ch = np.repeat(seg_pred_np[:, :, np.newaxis], 3, axis=2)
+
+            seg_gt = cls2one_hot(
+                seg_pred_3ch + 1, n_class=len(configx.cityscapes_palette)
+            )
+            seg_gt = (
+                torch.from_numpy(np.expand_dims(seg_gt, axis=0))
+                .to(configx.gpu_device)
+            )
+
+            fro_segcol = colorize_seg(
+                seg_gt.cpu().numpy(), configx.cityscapes_palette
+            )
+
+            cv2.imwrite(
+                str(ddir_segimg / file_name), fro_segcol[:, :, [2, 1, 0]]
+            )
+            print(f"Processed: {ddir_seg / file_name}")

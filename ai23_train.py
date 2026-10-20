@@ -137,6 +137,7 @@ def train(data_loader, model, config: GlobalConfig, writer, cur_epoch, optimizer
                 lgrad = 0
                 new_param_lw = params_lw
 
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
 
         # hitung rata-rata loss
@@ -202,7 +203,7 @@ def validate(data_loader, model, config: GlobalConfig, writer, cur_epoch):
             pred_wp = model(bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, gt_velocity)
 
             # compute loss
-            loss_wp = F.l1_loss(pred_wp, gt_waypoints)
+            loss_wp = F.smooth_l1_loss(pred_wp, gt_waypoints, beta=0.1)
             total_loss = loss_wp
 
             score['total_loss'].update(total_loss.item())
@@ -239,7 +240,7 @@ def main():
     print('Total trainable parameters: ', params)
 
     optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=4, min_lr=1e-6)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=4, min_lr=1e-7)
 
     karr_dataset = KarrDataset(config=config)
     split_dataset = SplitDataset(karr_dataset)

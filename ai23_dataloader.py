@@ -317,6 +317,18 @@ class KarrDataset(Dataset):
         data['lat_robot'] = lat_robot
         data['lon_robot'] = lon_robot
 
+        if self.phase == "train" and random.random() > 0.5:
+            for i in range(self.seq_len):
+                data['bev_segs'][i] = np.flip(data['bev_segs'][i], axis=-1).copy()
+                data['bev_deps'][i] = np.flip(data['bev_deps'][i], axis=-1).copy()
+                data['front_segs'][i] = np.flip(data['front_segs'][i], axis=-1).copy()
+                data['front_deps'][i] = np.flip(data['front_deps'][i], axis=-1).copy()
+                data['rgb'][i] = np.flip(data['rgb'][i], axis=-1).copy()
+
+            data["waypoints"] = [(-wp[0], wp[1]) for wp in data["waypoints"]]
+            data['rp1'] = (-data['rp1'][0], data['rp1'][1])
+            data['rp2'] = (-data['rp2'][0], data['rp2'][1])
+
         return data
 
     def _load_preload(self, preload_data):
@@ -366,9 +378,15 @@ class SplitDataset:
                 for start, stop in test_split[i]:
                     test_range.extend(range(start, stop))
 
+        val_dataset = copy.copy(self.dataset)
+        val_dataset.phase = "val"
+        
+        test_dataset = copy.copy(self.dataset)
+        test_dataset.phase = "test"
+
         self.train_set = Subset(self.dataset, train_range)
-        self.val_set = Subset(self.dataset, val_range)
-        self.test_set = Subset(self.dataset, test_range)
+        self.val_set = Subset(val_dataset, val_range)
+        self.test_set = Subset(test_dataset, test_range)
         self.total_len = len(self.train_set) + len(self.val_set) + len(self.test_set)
 
 

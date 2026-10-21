@@ -47,24 +47,6 @@ class KarrDataset(Dataset):
         self.imu_heading = []
         self.velocity = []
 
-        self.preload_data = {
-            "filename": [],
-            "rgb": [],
-            "raw_pcd": [],
-            "seg_pcd": [],
-            "lat": [],
-            "lon": [],
-            "local_x": [],
-            "local_y": [],
-            "rp1_lat": [],
-            "rp1_lon": [],
-            "rp2_lat": [],
-            "rp2_lon": [],
-            "bearing": [],
-            "local_heading": [],
-            "velocity": []
-        }
-
         self.route_list = sorted(p.name for p in config.datadir.iterdir() if p.is_dir())
 
         if self.config.select_route != "all":
@@ -78,6 +60,24 @@ class KarrDataset(Dataset):
             self.dir_rgb       = path / "camera" / "rgb"   # .png
             self.dir_raw_pcd   = path / "lidar" / "cld"    # .pcd
             self.dir_seg_pcd   = path / "lidar" / "seg"    # .npy
+
+            self.preload_data = {
+                "filename": [],
+                "rgb": [],
+                "raw_pcd": [],
+                "seg_pcd": [],
+                "lat": [],
+                "lon": [],
+                "local_x": [],
+                "local_y": [],
+                "rp1_lat": [],
+                "rp1_lon": [],
+                "rp2_lat": [],
+                "rp2_lon": [],
+                "bearing": [],
+                "local_heading": [],
+                "velocity": []
+            }
 
             # 3 for ringroad, 3 or 7 for ugm_baru
             history_buff = max(3, self.seq_len, self.config.gap_bearing + 1)

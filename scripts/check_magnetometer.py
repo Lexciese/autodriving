@@ -1,7 +1,13 @@
 import sys
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import yaml
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -128,21 +134,47 @@ def compute_calibration_matrix(ap, bp, phi):
     Q = R_mat.T @ S_mat @ R_mat
     return Q
 
+def read_single_yaml(path):
+    with open(path, "r") as f:
+        return yaml.load(f, Loader=SafeLoader)
 
 def main():
-    if config.select_route == "all":
-        raise ValueError("check_magnetometer.py requires a single select_route, not 'all'")
-    dataset_path = config.datadir / config.select_route
-    meta_path = dataset_path / "meta"
-    file_list = sorted(p.name for p in meta_path.iterdir())
+    subfolders = sorted(p for p in config.datadir.iterdir() if p.is_dir() and (p / 'meta').exists())
+    if config.select_route != "all":
+        subfolders = [config.datadir / config.select_route]
+        print(f"only route: {config.select_route} is selected")
 
-    meta = [yaml.safe_load(open(meta_path / f, "r"))
-            for f in tqdm(file_list, desc="Loading YAMLs")]
+    merged_meta = []
+    merged_file_names = []
 
-    file_names = np.array(file_list)
-    raw_lats = [m["global_position_latlon"][0] for m in tqdm(meta)]
-    raw_lons = [m["global_position_latlon"][1] for m in tqdm(meta)]
-    raw_mags = np.array([m["magnetic_field"] for m in meta], dtype=float)
+    for subfolder in subfolders:
+        print(f"Loading data from subfolder: {subfolder.name}")
+        all_yml_files = sorted((subfolder / 'meta').glob('*.yml'))
+        yml_files = all_yml_files[:]
+        
+        if not yml_files:
+            continue
+
+        with ThreadPoolExecutor() as executor:
+            subfolder_meta = list(tqdm(
+                executor.map(read_single_yaml, yml_files),
+                total=len(yml_files),
+                desc=f"  Reading YAMLs [{subfolder.name}]"
+            ))
+
+        merged_meta.extend(subfolder_meta)
+        merged_file_names.extend([f"{subfolder.name}/{f.name}" for f in yml_files])
+
+    if not merged_meta:
+        print("No valid YAML files found across subfolders.")
+        return
+
+    print(f"\n--- Total Combined Dataset Size: {len(merged_meta)} points ---")
+
+    raw_lats = [m["global_position_latlon"][0] for m in merged_meta]
+    raw_lons = [m["global_position_latlon"][1] for m in merged_meta]
+    raw_mags = np.array([m["magnetic_field"] for m in merged_meta], dtype=float)
+
     filtered_lats = hampel_filter(raw_lats, window_size=5)
     filtered_lons = hampel_filter(raw_lons, window_size=5)
 
@@ -152,8 +184,8 @@ def main():
     imu_bearing = []
     valid_indices = []
 
-    for i in tqdm(range(len(file_list)), desc="Extracting Bearings"):
-        curr_meta = meta[i]
+    for i in tqdm(range(len(merged_meta)), desc="Extracting Bearings (Merged)"):
+        curr_meta = merged_meta[i]
         curr_imu = curr_meta["global_orientation_xyzw"]
         velocity = np.abs(curr_meta["velocity"])
         curr_lat = filtered_lats[i]
@@ -174,10 +206,8 @@ def main():
             prev_lat = curr_lat
             prev_lon = curr_lon
 
-    imu_bearing = np.array(imu_bearing)
     ref_bearing = np.array(ref_bearing)
 
-    # Scale to microteslas (µT)
     scale = 1e6 if np.max(np.abs(raw_mags)) < 1.0 else 1.0
     mags_uT = raw_mags * scale
 
@@ -188,84 +218,90 @@ def main():
     y_body = mags_uT[:, 2]  # Left (+Y)
     z_body = mags_uT[:, 1]  # Up (+Z)
 
-    # 2D Ellipse Calibration on XY Plane
     coeffs = fit_ellipse(x_body, y_body)
     x0, y0, ap, bp, phi = cart_to_pol(coeffs)
     Q = compute_calibration_matrix(ap, bp, phi)
-    print(f"\n--- Calibration Results ---")
+
+    print(f"\n--- Combined Calibration Results ---")
     print(f"Hard-Iron Offset (X0, Y0): ({x0:.2f}, {y0:.2f}) µT")
     print(f"Semi-major (a): {ap:.2f}, Semi-minor (b): {bp:.2f}")
     print(f"Ellipse Angle (phi): {np.degrees(phi):.2f}°")
     print(f"Correction Matrix Q:\n{Q}\n")
+
     calibration_file = dict()
     calibration_file["offset"] = [float(x0), float(y0)]
     calibration_file["Q"] = Q.tolist()
     calibration_file["semi_major_minor"] = [float(ap), float(bp)]
     calibration_file["ellipse_angle_rad"] = float(phi)
-    calib_path = config.datadir.parent / "common" / "magnetometer_calib.yaml"
+
+    calib_dir = config.datadir.parent / "common"
+    calib_dir.mkdir(parents=True, exist_ok=True)
+    calib_path = calib_dir / "magnetometer_calib.yaml"
     with open(calib_path, 'w') as file:
         yaml.safe_dump(calibration_file, file)
+    print(f"Saved merged calibration parameters to {calib_path}")
 
-    # Apply Offset and Soft-Iron Q Matrix
     mags_offset = np.column_stack([x_body - x0, y_body - y0])
     mags_calibrated_xy = mags_offset @ Q.T
     x_cal = mags_calibrated_xy[:, 0]
     y_cal = mags_calibrated_xy[:, 1]
-    z_cal = z_body - np.mean(z_body)  # Center Z at 0 for side-by-side level comparison
+    z_cal = z_body - np.mean(z_body)
 
-    # Compute Calibrated Magnetometer Yaw & Yaw Error relative to latlon_to_yaw
-    valid_indices = np.array(valid_indices)
-    mag_bearing = mag_to_yaw(x_cal[valid_indices], y_cal[valid_indices])
+    if len(valid_indices) > 0:
+        valid_indices = np.array(valid_indices)
+        mag_bearing = mag_to_yaw(x_cal[valid_indices], y_cal[valid_indices])
+        yaw_error_rad = np.arctan2(np.sin(mag_bearing - ref_bearing), np.cos(mag_bearing - ref_bearing))
+        yaw_error_deg = np.degrees(yaw_error_rad)
+        ref_bearing_deg = np.degrees(ref_bearing)
 
-    # Calculate angular error wrapped to [-180, 180] degrees
-    yaw_error_rad = np.arctan2(np.sin(mag_bearing - ref_bearing), np.cos(mag_bearing - ref_bearing))
-    yaw_error_deg = np.degrees(yaw_error_rad)
-    ref_bearing_deg = np.degrees(ref_bearing)
+        plt.figure(figsize=(10, 6))
+        plt.scatter(ref_bearing_deg, yaw_error_deg, color='blue', alpha=0.6, edgecolors='none', s=18)
+        plt.axhline(0, color='red', linestyle='--', linewidth=1.5, label='Zero Error Line')
+        plt.xlim(-180, 180)
+        plt.xlabel("Reference Yaw / GNSS LatLon Yaw (degrees)", fontsize=11)
+        plt.ylabel("Yaw Error [Mag - Ref] (degrees)", fontsize=11)
+        plt.title("Calibrated Magnetometer Yaw Error vs Reference Yaw (All Routes Combined)", fontsize=12)
+        plt.grid(True, linestyle=':', alpha=0.6)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("magnetometer_yaw_error_combined.png", dpi=300)
+        plt.close()
+        print("Saved combined yaw error plot to magnetometer_yaw_error_combined.png")
 
-    # Plot and Save Yaw Error Graph
-    plt.figure(figsize=(10, 6))
-    plt.scatter(ref_bearing_deg, yaw_error_deg, color='blue', alpha=0.6, edgecolors='none', s=18)
-    plt.axhline(0, color='red', linestyle='--', linewidth=1.5, label='Zero Error Line')
-    plt.xlim(-180, 180)
-    plt.xlabel("Reference Yaw / GNSS LatLon Yaw (degrees)", fontsize=11)
-    plt.ylabel("Yaw Error [Mag - Ref] (degrees)", fontsize=11)
-    plt.title("Calibrated Magnetometer Yaw Error vs. Reference Yaw", fontsize=12)
-    plt.grid(True, linestyle=':', alpha=0.6)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig("magnetometer_yaw_error.png", dpi=300)
-    plt.close()
+    MAX_PLOT_POINTS = 8000
+    if len(x_body) > MAX_PLOT_POINTS:
+        step = len(x_body) // MAX_PLOT_POINTS
+        p_idx = slice(0, None, step)
+    else:
+        p_idx = slice(None)
 
-    # Parametric Overlay Curves
     theta = np.linspace(0, 2 * np.pi, 200)
-    # Parametric Raw Fitted Ellipse
     ellipse_x = x0 + ap * np.cos(theta) * np.cos(phi) - bp * np.sin(theta) * np.sin(phi)
     ellipse_y = y0 + ap * np.cos(theta) * np.sin(phi) + bp * np.sin(theta) * np.cos(phi)
     ellipse_z = np.full_like(theta, np.mean(z_body))
-    # Parametric Calibrated Ideal Circle
     circle_x = bp * np.cos(theta)
     circle_y = bp * np.sin(theta)
     circle_z = np.zeros_like(theta)
 
     fig = go.Figure()
+
     # Uncalibrated 3D Data Scatter
     fig.add_trace(go.Scatter3d(
-        x=x_body, y=y_body, z=z_body,
+        x=x_body[p_idx], y=y_body[p_idx], z=z_body[p_idx],
         mode='markers',
         marker=dict(size=2, color='royalblue', opacity=0.4),
         name='Uncalibrated Raw Points',
-        customdata=file_names,
+        customdata=np.array(merged_file_names)[p_idx],
         hovertemplate="<b>[Uncalibrated]</b><br>File: %{customdata}<br>X: %{x:.2f} µT<br>Y: %{y:.2f} µT<br>Z: %{z:.2f} µT<extra></extra>"
     ))
 
-    # Fitted Raw Ellipse Surface Ring
     fig.add_trace(go.Scatter3d(
         x=ellipse_x, y=ellipse_y, z=ellipse_z,
         mode='lines',
         line=dict(color='red', width=5),
         name='Fitted Raw Ellipse'
     ))
-    # Hard-Iron Center Point
+
     fig.add_trace(go.Scatter3d(
         x=[x0], y=[y0], z=[np.mean(z_body)],
         mode='markers+text',
@@ -274,23 +310,24 @@ def main():
         textposition="top center",
         name='Hard-Iron Center'
     ))
+
     # Calibrated 3D Data Scatter
     fig.add_trace(go.Scatter3d(
-        x=x_cal, y=y_cal, z=z_cal,
+        x=x_cal[p_idx], y=y_cal[p_idx], z=z_cal[p_idx],
         mode='markers',
         marker=dict(size=2, color='limegreen', opacity=0.4),
         name='Calibrated Points',
-        customdata=file_names,
+        customdata=np.array(merged_file_names)[p_idx],
         hovertemplate="<b>[Calibrated]</b><br>File: %{customdata}<br>X: %{x:.2f} µT<br>Y: %{y:.2f} µT<br>Z: %{z:.2f} µT<extra></extra>"
     ))
-    # Ideal Calibrated Circle Ring
+
     fig.add_trace(go.Scatter3d(
         x=circle_x, y=circle_y, z=circle_z,
         mode='lines',
         line=dict(color='cyan', width=5),
         name='Ideal Calibrated Circle'
     ))
-    # Calibrated Center Point (0,0,0)
+
     fig.add_trace(go.Scatter3d(
         x=[0], y=[0], z=[0],
         mode='markers+text',
@@ -299,9 +336,9 @@ def main():
         textposition="top center",
         name='Calibrated Center'
     ))
-    # Layout Configuration
+
     fig.update_layout(
-        title="3D Overlay: Uncalibrated vs. Calibrated Magnetometer Data",
+        title="3D Overlay: Combined Uncalibrated vs. Calibrated Magnetometer Data",
         scene=dict(
             xaxis_title="Vehicle X / Forward (µT)",
             yaxis_title="Vehicle Y / Lateral (µT)",
@@ -313,7 +350,9 @@ def main():
         height=800
     )
 
-    fig.write_html("magnetometer_overlay_3d.html")
+    output_html = "magnetometer_overlay_3d_combined.html"
+    fig.write_html(output_html)
+    print(f"Saved combined HTML overlay to {output_html}")
 
 if __name__ == "__main__":
     main()

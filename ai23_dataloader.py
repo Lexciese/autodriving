@@ -100,7 +100,7 @@ class KarrDataset(Dataset):
             if preload_path.exists():
                 self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)
-                return
+                continue
 
             self.files = sorted(p.stem for p in self.dir_meta.glob("*.yml"))
             self.len_files = len(self.files)
@@ -354,7 +354,7 @@ class KarrDataset(Dataset):
         self.velocity += preload_data["velocity"]
 
 class SplitDataset:
-    def __init__(self, dataset):
+    def __init__(self, dataset: KarrDataset):
         self.dataset = dataset
         self.config  = dataset.config
 
@@ -365,6 +365,8 @@ class SplitDataset:
         train_range = []
         val_range = []
         test_range = []
+        route_offset = 0
+
         for route in self.route_list:
             path = self.config.datadir / route / "split.yml"
             split_yml = yaml.safe_load(open(path, "r"))
@@ -375,11 +377,16 @@ class SplitDataset:
 
             for i in range(n_regions):
                 for start, stop in train_split[i]:
-                    train_range.extend(range(start, stop))
+                    train_range.extend(range(start + route_offset, stop + route_offset))
                 for start, stop in val_split[i]:
-                    val_range.extend(range(start, stop))
+                    val_range.extend(range(start + route_offset, stop + route_offset))
                 for start, stop in test_split[i]:
-                    test_range.extend(range(start, stop))
+                    test_range.extend(range(start + route_offset, stop + route_offset))
+
+            dir_meta = self.config.datadir / route / "meta"
+            len_files = len(list(dir_meta.glob("*.yml")))
+            route_samples = len_files - (self.config.seq_len - 1) - (self.config.pred_len * self.config.hz)
+            route_offset += max(0, route_samples)
 
         val_dataset = copy.copy(self.dataset)
         val_dataset.phase = "val"
@@ -391,7 +398,6 @@ class SplitDataset:
         self.val_set = Subset(val_dataset, val_range)
         self.test_set = Subset(test_dataset, test_range)
         self.total_len = len(self.train_set) + len(self.val_set) + len(self.test_set)
-
 
 if __name__ == "__main__":
     config = GlobalConfig()

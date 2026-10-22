@@ -137,7 +137,6 @@ def train(data_loader, model, config: GlobalConfig, writer, cur_epoch, optimizer
                 lgrad = 0
                 new_param_lw = params_lw
 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
 
         # hitung rata-rata loss

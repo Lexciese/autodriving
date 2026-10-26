@@ -77,23 +77,32 @@ for route in route_list:
             curr_meta = yaml.safe_load(curr_metafile)
         velocity = np.abs(curr_meta["velocity"])
 
-        raw_curr_lat = curr_meta['global_position_latlon'][0]
-        raw_curr_lon = curr_meta['global_position_latlon'][1]
+        veh_curr_lat = curr_meta['global_position_latlon'][0]
+        veh_curr_lon = curr_meta['global_position_latlon'][1]
 
-        veh_curr_lat, veh_curr_lon, is_outlier = hampel_filter(
-            raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0
-        )
+        prev_idx = max(0, current_idx - configx.gap_bearing)
+        with open(ddir_meta / file_list[prev_idx], 'r') as prev_metafile:
+            prev_meta = yaml.safe_load(prev_metafile)
+        veh_prev_lat = prev_meta['global_position_latlon'][0]
+        veh_prev_lon = prev_meta['global_position_latlon'][1]
+        
+        # raw_curr_lat = curr_meta['global_position_latlon'][0]
+        # raw_curr_lon = curr_meta['global_position_latlon'][1]
 
-        prev_offset = -(1 + configx.gap_bearing)
-        if len(latlon_buffer['lat_buf']) >= abs(prev_offset):
-            veh_prev_lat = latlon_buffer['lat_buf'][prev_offset]
-            veh_prev_lon = latlon_buffer['lon_buf'][prev_offset]
-        else:
-            prev_idx = max(0, current_idx - configx.gap_bearing)
-            with open(ddir_meta / file_list[prev_idx], 'r') as prev_metafile:
-                prev_meta = yaml.safe_load(prev_metafile)
-            veh_prev_lat = prev_meta['global_position_latlon'][0]
-            veh_prev_lon = prev_meta['global_position_latlon'][1]
+        # veh_curr_lat, veh_curr_lon, is_outlier = hampel_filter(
+        #     raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0
+        # )
+
+        # prev_offset = -(1 + configx.gap_bearing)
+        # if len(latlon_buffer['lat_buf']) >= abs(prev_offset):
+        #     veh_prev_lat = latlon_buffer['lat_buf'][prev_offset]
+        #     veh_prev_lon = latlon_buffer['lon_buf'][prev_offset]
+        # else:
+        #     prev_idx = max(0, current_idx - configx.gap_bearing)
+        #     with open(ddir_meta / file_list[prev_idx], 'r') as prev_metafile:
+        #         prev_meta = yaml.safe_load(prev_metafile)
+        #     veh_prev_lat = prev_meta['global_position_latlon'][0]
+        #     veh_prev_lon = prev_meta['global_position_latlon'][1]
 
         dLat_m = (veh_curr_lat - veh_prev_lat) * 40008000 / 360
         dLon_m = (veh_curr_lon - veh_prev_lon) * 40075000 * np.cos(np.radians(veh_curr_lat)) / 360

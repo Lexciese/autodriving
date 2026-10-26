@@ -15,10 +15,9 @@ try:
 except ImportError:
     tqdm = None
 
-configx = GlobalConfig()
-BAG = Path("/media/mf/AUTODRIVING-4TB1/UGM Baru/rosbag2_2025_11_05-11_00_19/rosbag2_2025_11_05-11_00_19_0.mcap")
-DATADIR = configx.datadir
-PREFIX = str(date.today()) + "_route00"
+ROSBAG_DIR = Path("/media/mf/SATA4TB/AUTODRIVING-DATASET-rosbag/SELATAN/rosbag2_2025_11_06-13_21_12/rosbag2_2025_11_06-13_21_12_0_recover.mcap")
+EXTRACT_DIR = Path("/media/mf/AUTODRIVING-4TB1/AUTODRIVING-DATASET-extracted")
+PREFIX = "selatan"
 SLOP_NS = 150_000_000 # 0.15 s
 QUEUE_SIZE = 50
 
@@ -35,18 +34,19 @@ TOPICS = [
 ]
 
 dirs = {
-    'meta': DATADIR / PREFIX / "meta",
-    'rgb': DATADIR / PREFIX / "camera" / "rgb",
-    'depth_cld': DATADIR / PREFIX / "camera" / "depth" / "cld",
-    'depth_cld2': DATADIR / PREFIX / "camera" / "depth" / "cld2",
-    'depth_map': DATADIR / PREFIX / "camera" / "depth" / "map",
-    'lidar': DATADIR / PREFIX / "lidar" / "cld"
+    'meta': EXTRACT_DIR / PREFIX / "meta",
+    'rgb': EXTRACT_DIR / PREFIX / "camera" / "rgb",
+    'depth_cld': EXTRACT_DIR / PREFIX / "camera" / "depth" / "cld",
+    'depth_cld2': EXTRACT_DIR / PREFIX / "camera" / "depth" / "cld2",
+    'depth_map': EXTRACT_DIR / PREFIX / "camera" / "depth" / "map",
+    'lidar': EXTRACT_DIR / PREFIX / "lidar" / "cld"
 }
 for d in dirs.values():
     d.mkdir(parents=True, exist_ok=True)
 
 bridge = CvBridge()
 
+# DO NOT MODIFY the ApproximateTimeSynchronizer
 class ApproximateTimeSynchronizer:
     def __init__(self, topics, slop_ns, callback, queue_size=100):
         self.topics = topics
@@ -176,7 +176,7 @@ def save(sync_data):
 
 def main():
     typestore = get_typestore(Stores.ROS2_HUMBLE)
-    with AnyReader([BAG], default_typestore=typestore) as reader:
+    with AnyReader([ROSBAG_DIR], default_typestore=typestore) as reader:
         conns = [c for c in reader.connections if c.topic in TOPICS]
         synchronizer = ApproximateTimeSynchronizer(TOPICS, SLOP_NS, save, QUEUE_SIZE)
 

@@ -21,8 +21,8 @@ class GlobalConfig:
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
 
     # Data paths
-    datadir = PROJECT_ROOT / "datasetx"
-    select_route = "ugm_baru" # all # ringroad #ugm_baru
+    datadir = Path("/media/mf/AUTODRIVING-4TB1/AUTODRIVING-DATASET-extracted") # PROJECT_ROOT / "datasetx"
+    select_route = "all" # all # ringroad-711 # ugm_baru
     polarseg_weight_path = PROJECT_ROOT / "common" / "polarseg" / "SemKITTI_PolarSeg.pt"
     segformer_weight_path = PROJECT_ROOT / "common" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth"
     segformer_config_path = PROJECT_ROOT / "common" / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py"
@@ -43,7 +43,7 @@ class GlobalConfig:
     # bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
     bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
     magnetometer_calib = yaml.safe_load(open(PROJECT_ROOT / "common" / "magnetometer_calib.yaml", "r"))
-    rp1_close = 7  # min distance (m) to advance to the next route point
+    rp1_close = 4  # min distance (m) to advance to the next route point
     route_gap_distance = 4  # in meters
     n_buffer = 0  # moving-average buffer (seconds)
 
@@ -56,8 +56,9 @@ class GlobalConfig:
 
     # Training
     inputs = 'segdep'  # segdep | seg | dep
-    logdir = PROJECT_ROOT / "log" / f"xr20_{inputs}_seq1_{string_date}_route_{select_route}"
-    init_stop_counter = 30
+    model = 'ai23' # xr20 
+    logdir = PROJECT_ROOT / "log" / f"{model}_{inputs}_seq1_{string_date}_route_{select_route}"
+    init_stop_counter = 40
     batch_size = 10
     lr = 1e-4  # learning rate (AdamW)
     weight_decay = 1e-3

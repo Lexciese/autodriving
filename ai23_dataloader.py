@@ -5,6 +5,7 @@ import numpy as np
 import copy
 import random
 from pathlib import Path
+import pandas as pd
 from tqdm import tqdm
 from pypcd4.pypcd4 import PointCloud
 import h5py
@@ -94,7 +95,7 @@ class KarrDataset(Dataset):
             lidar_hdf5 = h5py.File(route_hdf5_path, "a")
             frames_grp = lidar_hdf5.require_group("frames")
 
-            preload_path = path / f"preload_seq{str(self.seq_len)}_pred{self.pred_len}_w{latlon_buffer['window_size']}.npy"
+            preload_path = path / f"preload_seq{str(self.seq_len)}_pred{self.pred_len}_latlon_fix.npy"
             if preload_path.exists():
                 self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)
@@ -159,11 +160,13 @@ class KarrDataset(Dataset):
                 seq_local_y.append(meta_current["local_position_xyz"][1])
                 local_quaternion = meta_current["local_orientation_xyzw"]
                 seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
-                raw_curr_lat = meta_current["global_position_latlon"][0]
-                raw_curr_lon = meta_current["global_position_latlon"][1]
+                gnss_file = Path(path / f"{route}_gnss.csv")
+                gnss_df = pd.read_csv(gnss_file)
+                curr_lat, curr_lon = gnss_df[gnss_df['timestamp'] == filename][['latitude', 'longitude']].values[0]
+
                 velocity = np.abs(meta_current["velocity"])
 
-                curr_lat, curr_lon, is_outlier = hampel_filter(raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0)
+                # curr_lat, curr_lon, is_outlier = hampel_filter(raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0)
 
                 raw_mag = meta_current['magnetic_field']
                 magneto_x0, magneto_y0 = self.magnetometer_calib["offset"]
@@ -322,17 +325,17 @@ class KarrDataset(Dataset):
         data['lat_robot'] = lat_robot
         data['lon_robot'] = lon_robot
 
-        if self.phase == "train" and random.random() > 0.5:
-            for i in range(self.seq_len):
-                data['bev_segs'][i] = np.flip(data['bev_segs'][i], axis=-1).copy()
-                data['bev_deps'][i] = np.flip(data['bev_deps'][i], axis=-1).copy()
-                data['front_segs'][i] = np.flip(data['front_segs'][i], axis=-1).copy()
-                data['front_deps'][i] = np.flip(data['front_deps'][i], axis=-1).copy()
-                data['rgb'][i] = np.flip(data['rgb'][i], axis=-1).copy()
+        # if self.phase == "train" and random.random() > 0.5:
+        #     for i in range(self.seq_len):
+        #         data['bev_segs'][i] = np.flip(data['bev_segs'][i], axis=-1).copy()
+        #         data['bev_deps'][i] = np.flip(data['bev_deps'][i], axis=-1).copy()
+        #         data['front_segs'][i] = np.flip(data['front_segs'][i], axis=-1).copy()
+        #         data['front_deps'][i] = np.flip(data['front_deps'][i], axis=-1).copy()
+        #         data['rgb'][i] = np.flip(data['rgb'][i], axis=-1).copy()
 
-            data["waypoints"] = [(-wp[0], wp[1]) for wp in data["waypoints"]]
-            data['rp1'] = (-data['rp1'][0], data['rp1'][1])
-            data['rp2'] = (-data['rp2'][0], data['rp2'][1])
+        #     data["waypoints"] = [(-wp[0], wp[1]) for wp in data["waypoints"]]
+        #     data['rp1'] = (-data['rp1'][0], data['rp1'][1])
+        #     data['rp2'] = (-data['rp2'][0], data['rp2'][1])
 
         return data
 

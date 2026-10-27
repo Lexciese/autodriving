@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import argparse
 import cv2
 from tqdm import tqdm
 from collections import OrderedDict
@@ -15,7 +16,7 @@ torch.backends.cudnn.benchmark = True
 import shutil
 from ai33_model import ai33
 from ai33_dataloader import KarrDataset, SplitDataset
-from config import GlobalConfig
+from config import GlobalConfig, select_logdir
 import config as config_module
 
 
@@ -227,7 +228,12 @@ def validate(data_loader, model, config: GlobalConfig, writer, cur_epoch):
 
 # MAIN FUNCTION
 def main():
+    parser = argparse.ArgumentParser(description="Train or continue training.")
+    parser.add_argument('--resume', action='store_true', help='Prompt user to select a logdir to continue training.')
+    parser.add_argument('--retrain', action='store_true', help='retrain the model in different dataset.')
+    args = parser.parse_args()
     config: GlobalConfig = GlobalConfig()
+    config.model = "ai23"
 
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -240,7 +246,7 @@ def main():
     print('Total trainable parameters: ', params)
 
     optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=4, min_lr=1e-7)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optima, mode='min', factor=0.5, patience=5, min_lr=1e-6)
 
     karr_dataset = KarrDataset(config=config)
     split_dataset = SplitDataset(karr_dataset)
@@ -256,35 +262,72 @@ def main():
 
     print(f"Dataset split total: {total_len} | Train: {len(train_set)} | Val: {len(val_set)} | Test: {len(test_set)}")
 
-    if not (config.logdir / "trainval_log.csv").exists():
+    logdir = None
+    if args.resume:
+        logdir = select_logdir()
+    elif args.retrain:
+        logdir = select_logdir()
+
+    if args.resume and (logdir / "trainval_log.csv").exists():
+        print('Continue training!!!!!!!!!!!!!!!!')
+        print(f'Loading checkpoint from {logdir}')
+        config.logdir = logdir
+
+        log_trainval = pd.read_csv(config.logdir / "trainval_log.csv")
+        curr_ep = int(log_trainval['epoch'].iloc[-1]) + 1
+        lowest_score = float(np.min(log_trainval['val_loss']))
+        stop_count = int(log_trainval['stop_counter'].iloc[-1])
+
+        latest_lw = [float(log_trainval['lw_wp'].iloc[-1])]
+        params_lw = [torch.cuda.FloatTensor([latest_lw[0]]).clone().detach().requires_grad_(True)]
+        optima_lw = optim.SGD(params_lw, lr=float(log_trainval['lrate'].iloc[-1]))
+
+        # Instantiate model and load state dicts from target log directory
+        model = ai33(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+        optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
+        model.load_state_dict(torch.load(logdir / 'recent_model.pth'))
+        optima.load_state_dict(torch.load(logdir / 'recent_optim.pth'))
+    elif args.retrain:
+        print('Continue training!!!!!!!!!!!!!!!!')
+        print(f'Loading checkpoint from {logdir}')
+        config.logdir = logdir
+
+        log_trainval = pd.read_csv(config.logdir / "trainval_log.csv")
+        curr_ep = int(log_trainval['epoch'].iloc[-1]) + 1
+        lowest_score = float(np.min(log_trainval['val_loss']))
+        stop_count = stop_count = config.init_stop_counter
+
+        latest_lw = [float(log_trainval['lw_wp'].iloc[-1])]
+        params_lw = [torch.cuda.FloatTensor([latest_lw[0]]).clone().detach().requires_grad_(True)]
+        optima_lw = optim.SGD(params_lw, lr=float(log_trainval['lrate'].iloc[-1]))
+
+        # Append subfolder for retrain outputs
+        config.logdir = config.logdir.parent / f"retrain_{config.logdir.name}"
+        config.logdir.mkdir(parents=True, exist_ok=True)
+        print('Created new retrain dir:', config.logdir)
+
+        # Instantiate model and load state dicts from target log directory
+        model = ai33(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+        optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
+        model.load_state_dict(torch.load(logdir / 'recent_model.pth'))
+        optima.load_state_dict(torch.load(logdir / 'recent_optim.pth'))
+        for param_group in optima.param_groups:
+            param_group['lr'] = config.lr
+    else:
         print('TRAIN from the beginning!!!!!!!!!!!!!!!!')
         config.logdir.mkdir(parents=True, exist_ok=True)
         print('Created dir:', config.logdir)
 
-        # Initial loss weights (single task for waypoints)
+        model = ai33(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+        optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
         params_lw = [torch.cuda.FloatTensor([config.loss_weights[0]]).clone().detach().requires_grad_(True)]
         optima_lw = optim.SGD(params_lw, lr=config.lr)
         curr_ep = 0
         lowest_score = float('inf')
         stop_count = config.init_stop_counter
-    else:
-        print('Continue training!!!!!!!!!!!!!!!!')
-        print('Loading checkpoint from ' + config.logdir)
-        log_trainval = pd.read_csv(config.logdir / "trainval_log.csv")
-        curr_ep = int(log_trainval['epoch'][-1:]) + 1
-        lowest_score = float(np.min(log_trainval['val_loss']))
-        stop_count = int(log_trainval['stop_counter'][-1:])
-
-        model.load_state_dict(torch.load(config.logdir / 'recent_model.pth'))
-        optima.load_state_dict(torch.load(config.logdir / 'recent_optim.pth'))
-
-        latest_lw = [float(log_trainval['lw_wp'][-1:])]
-        params_lw = [torch.cuda.FloatTensor([latest_lw[0]]).clone().detach().requires_grad_(True)]
-        optima_lw = optim.SGD(params_lw, lr=float(log_trainval['lrate'][-1:]))
-
-        config.logdir = config.logdir / "retrain"
-        config.logdir.mkdir(parents=True, exist_ok=True)
-        print('Created new retrain dir:', config.logdir)
 
     config_file_path = config_module.__file__
     shutil.copyfile(config_file_path, config.logdir / 'config.py')
@@ -366,12 +409,11 @@ def main():
         log['stop_counter'].append(stop_count)
         pd.DataFrame(log).to_csv(config.logdir / 'trainval_log.csv', index=False)
 
-        torch.cuda.empty_cache()
-        epoch += 1
-
-        if stop_count == 0:
+        if stop_count <= 0:
             print("TRAINING BERHENTI KARENA TIDAK ADA PENURUNAN TOTAL LOSS DALAM %d EPOCH TERAKHIR" % (config.init_stop_counter))
             break
+        torch.cuda.empty_cache()
+        epoch += 1
 
 
 if __name__ == "__main__":

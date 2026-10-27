@@ -5,10 +5,9 @@ inclusive index ranges per region (indices follow the sorted ``meta/*.yml`` file
 order). This script maps those indices back to latitude/longitude, colours the
 points by split (or by region), and writes a static interactive plotly HTML.
 
-Run with the ``dl`` conda environment::
 
-    conda run -n dl python scripts/plot_split.py
-    conda run -n dl python scripts/plot_split.py --split datasetx/<route>/split.yml --open
+    python scripts/plot_split.py
+    python scripts/plot_split.py --split datasetx/<route>/split.yml --open
 """
 
 import argparse
@@ -30,9 +29,6 @@ PALETTE = [
 ]
 
 
-# --------------------------------------------------------------------------- #
-# Loading
-# --------------------------------------------------------------------------- #
 def _load_config():
     """Import the repo config lazily so explicit --split works without it."""
     from config import GlobalConfig

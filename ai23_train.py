@@ -231,6 +231,7 @@ def main():
     parser.add_argument('--retrain', action='store_true', help='retrain the model in different dataset.')
     args = parser.parse_args()
     config: GlobalConfig = GlobalConfig()
+    config.model = "ai23"
 
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -278,11 +279,6 @@ def main():
         latest_lw = [float(log_trainval['lw_wp'].iloc[-1])]
         params_lw = [torch.cuda.FloatTensor([latest_lw[0]]).clone().detach().requires_grad_(True)]
         optima_lw = optim.SGD(params_lw, lr=float(log_trainval['lrate'].iloc[-1]))
-
-        # Append subfolder for retrain outputs
-        config.logdir = config.logdir.parent / f"retrain_{config.logdir.name}"
-        config.logdir.mkdir(parents=True, exist_ok=True)
-        print('Created new retrain dir:', config.logdir)
 
         # Instantiate model and load state dicts from target log directory
         model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)

@@ -407,7 +407,7 @@ def main():
             log['best_model'].append("")
 
         log['stop_counter'].append(stop_count)
-        pd.DataFrame(log).to_csv(config.logdir / 'trainval_log.csv', index=False)
+        pd.DataFrame(log).to_csv(config.logdir / 'trainval_log.csv', mode='a', index=False)
 
         if stop_count <= 0:
             print("TRAINING BERHENTI KARENA TIDAK ADA PENURUNAN TOTAL LOSS DALAM %d EPOCH TERAKHIR" % (config.init_stop_counter))

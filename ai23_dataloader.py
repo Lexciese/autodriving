@@ -92,7 +92,7 @@ class KarrDataset(Dataset):
             }
 
             route_hdf5_path = path / "lidar" / "preload_lidar_bev_front_seg_dep.hdf5"
-            lidar_hdf5 = h5py.File(route_hdf5_path, "a")
+            lidar_hdf5 = h5py.File(route_hdf5_path, "a", locking=False)
             frames_grp = lidar_hdf5.require_group("frames")
 
             preload_path = path / f"preload_seq{str(self.seq_len)}_pred{self.pred_len}_latlon_fix.npy"
@@ -272,7 +272,7 @@ class KarrDataset(Dataset):
                 route_dir = pcd_path.parents[2]
                 route_hdf5_path = route_dir / "lidar" / "preload_lidar_bev_front_seg_dep.hdf5"
                 if route_hdf5_path not in self.hdf5_handles:
-                    self.hdf5_handles[route_hdf5_path] = h5py.File(route_hdf5_path, "r")
+                    self.hdf5_handles[route_hdf5_path] = h5py.File(route_hdf5_path, "r", locking=False)
                 h5_file = self.hdf5_handles[route_hdf5_path]
                     
                 bev_seg   = cast(h5py.Dataset, h5_file[f"frames/{frame_name}/bev_seg"])[:]

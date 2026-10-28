@@ -13,8 +13,8 @@ from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
-from ai23_model import xr20
-from ai23_dataloader import KarrDataset, SplitDataset
+from xr20_model import xr20
+from xr20_dataloader import KarrDataset, SplitDataset
 
 # use the config from the log directory
 from config import GlobalConfig, select_logdir
@@ -116,7 +116,8 @@ def test(data_loader, model, config: GlobalConfig):
             meta_pred['model_fps'] = float(1/model_elapsed_time)
             elapsed_time = time.time() - start_time #hitung elapsedtime
             meta_pred['fps'] = float(1/elapsed_time)
-            with open(save_dir_meta / f"{data['filename'][-1]}.yml", 'w') as dict_file:
+            frame_name = data['filename'][0] if isinstance(data['filename'], (list, tuple)) else data['filename']
+            with open(save_dir_meta / f"{frame_name}.yml", 'w') as dict_file:
                 yaml.dump(meta_pred, dict_file)
 
             batch_ke += 1
@@ -154,7 +155,7 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
-    config.datadir = Path("/media/mf/SATA4TB/autodriving/datasetx")
+    config.select_route = "ugm_baru"
 
 
     #SET GPU YANG AKTIF

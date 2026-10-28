@@ -13,8 +13,8 @@ from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
-from ai23_model import xr20
-from ai23_dataloader import KarrDataset
+from ai23_model import ai23
+from ai23_dataloader import KarrDataset, SplitDataset
 
 from preprocess_util import plot_lidbev_rpwp, plot_lidfront_rpwp
 
@@ -306,18 +306,13 @@ def main():
     model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
     model.load_state_dict(torch.load(config.logdir / 'best_model.pth'))
 
-    # train: 80%, validation: 10%, test: 10%
-    karr_dataset = KarrDataset(config=config)
-    total_len = len(karr_dataset)
-    # train: 80%, validation: 10%, test: 10%
-    train_len = int(0.8 * total_len)
-    val_len = int(0.1 * total_len)
-    test_len = total_len - train_len - val_len
+    karr_dataset = KarrDataset(config=config, phase="train") # change to "test" when deploy
+    split_dataset = SplitDataset(karr_dataset)
+    total_len = split_dataset.total_len
+    train_set   = split_dataset.train_set
+    val_set     = split_dataset.val_set
+    test_set    = split_dataset.test_set
 
-    train_indices = list(range(0, train_len))
-    val_indices = list(range(train_len, train_len + val_len))
-    test_indices = list(range(train_len + val_len, total_len))
-    test_set = Subset(karr_dataset, test_indices)
     dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
     #test

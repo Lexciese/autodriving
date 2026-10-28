@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 torch.backends.cudnn.benchmark = True
 
 import shutil
-from ai23_model import xr20
+from ai23_model import ai23
 from ai23_dataloader import KarrDataset, SplitDataset
 from config import GlobalConfig, select_logdir
 import config as config_module
@@ -238,7 +238,7 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_id
 
     print("IMPORT ARSITEKTUR DL DAN COMPILE")
-    model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+    model = ai23(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     print('Total trainable parameters: ', params)
@@ -281,7 +281,7 @@ def main():
         optima_lw = optim.SGD(params_lw, lr=float(log_trainval['lrate'].iloc[-1]))
 
         # Instantiate model and load state dicts from target log directory
-        model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+        model = ai23(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
         optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
         model.load_state_dict(torch.load(logdir / 'recent_model.pth'))
@@ -306,7 +306,7 @@ def main():
         print('Created new retrain dir:', config.logdir)
 
         # Instantiate model and load state dicts from target log directory
-        model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+        model = ai23(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
         optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
         model.load_state_dict(torch.load(logdir / 'recent_model.pth'))
@@ -318,7 +318,7 @@ def main():
         config.logdir.mkdir(parents=True, exist_ok=True)
         print('Created dir:', config.logdir)
 
-        model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+        model = ai23(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
         optima = optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
         params_lw = [torch.cuda.FloatTensor([config.loss_weights[0]]).clone().detach().requires_grad_(True)]
@@ -405,7 +405,7 @@ def main():
             log['best_model'].append("")
 
         log['stop_counter'].append(stop_count)
-        pd.DataFrame(log).to_csv(config.logdir / 'trainval_log.csv', index=False)
+        pd.DataFrame(log).to_csv(config.logdir / 'trainval_log.csv', mode='a', index=False)
 
         if stop_count <= 0:
             print("TRAINING BERHENTI KARENA TIDAK ADA PENURUNAN TOTAL LOSS DALAM %d EPOCH TERAKHIR" % (config.init_stop_counter))

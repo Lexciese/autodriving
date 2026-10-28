@@ -86,7 +86,7 @@ class NecksNet(nn.Module):
         return y
 
 
-class xr20(nn.Module):
+class ai23(nn.Module):
     def __init__(self, config: GlobalConfig, device):
         super().__init__()
         self.config: GlobalConfig = config

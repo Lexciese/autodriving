@@ -361,47 +361,57 @@ class KarrDataset(Dataset):
 class SplitDataset:
     def __init__(self, dataset: KarrDataset):
         self.dataset = dataset
-        self.config  = dataset.config
+        self.config = dataset.config
 
-        self.route_list = sorted(p.name for p in self.config.datadir.iterdir() if p.is_dir())
-        if self.config.select_route != "all":
-            self.route_list = [self.config.select_route]
+        if self.config.select_route == "all":
+            routes = sorted(p.name for p in self.config.datadir.iterdir() if p.is_dir())
+        else:
+            routes = [self.config.select_route]
 
-        train_range = []
-        val_range = []
-        test_range = []
+        seq_offset = self.config.seq_len - 1
+        future_offset = self.config.pred_len * self.config.hz
+
+        train_indices = []
+        val_indices = []
+        test_indices = []
         route_offset = 0
 
-        for route in self.route_list:
-            path = self.config.datadir / route / "split.yml"
-            split_yml = yaml.safe_load(open(path, "r"))
-            n_regions = split_yml["n_regions"]
-            train_split = split_yml["train"]
-            val_split = split_yml["val"]
-            test_split = split_yml["test"]
+        for route in routes:
+            route_path = self.config.datadir / route
+            
+            with open(route_path / "split.yml", "r") as f:
+                split_config = yaml.safe_load(f)
 
-            for i in range(n_regions):
-                for start, stop in train_split[i]:
-                    train_range.extend(range(start + route_offset, stop + route_offset))
-                for start, stop in val_split[i]:
-                    val_range.extend(range(start + route_offset, stop + route_offset))
-                for start, stop in test_split[i]:
-                    test_range.extend(range(start + route_offset, stop + route_offset))
+            total_frames = len(list((route_path / "meta").glob("*.yml")))
+            max_valid_samples = max(0, total_frames - seq_offset - future_offset)
 
-            dir_meta = self.config.datadir / route / "meta"
-            len_files = len(list(dir_meta.glob("*.yml")))
-            route_samples = len_files - (self.config.seq_len - 1) - (self.config.pred_len * self.config.hz)
-            route_offset += max(0, route_samples)
+            splits = [
+                ("train", train_indices),
+                ("val", val_indices),
+                ("test", test_indices),
+            ]
 
-        val_dataset = copy.copy(self.dataset)
+            for split_key, target_list in splits:
+                for region in split_config[split_key]:
+                    for start_frame, stop_frame in region:
+                        sample_start = max(0, start_frame - seq_offset)
+                        sample_stop = min(max_valid_samples, stop_frame - seq_offset)
+
+                        if sample_start < sample_stop:
+                            index_range = range(sample_start + route_offset, sample_stop + route_offset)
+                            target_list.extend(index_range)
+
+            route_offset += max_valid_samples
+
+        val_dataset = copy.deepcopy(dataset)
         val_dataset.phase = "val"
-        
-        test_dataset = copy.copy(self.dataset)
+
+        test_dataset = copy.deepcopy(dataset)
         test_dataset.phase = "test"
 
-        self.train_set = Subset(self.dataset, train_range)
-        self.val_set = Subset(val_dataset, val_range)
-        self.test_set = Subset(test_dataset, test_range)
+        self.train_set = Subset(dataset, train_indices)
+        self.val_set = Subset(val_dataset, val_indices)
+        self.test_set = Subset(test_dataset, test_indices)
         self.total_len = len(self.train_set) + len(self.val_set) + len(self.test_set)
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
-from ai23_model import xr20
+from ai23_model import ai23
 from ai23_dataloader import KarrDataset, SplitDataset
 
 # use the config from the log directory
@@ -51,6 +51,7 @@ def test(data_loader, model, config: GlobalConfig):
     save_dir = config.logdir / "offline_test"
     save_dir.mkdir(parents=True, exist_ok=True)
     save_dir_log = save_dir
+    save_path = save_dir_log / f'test_log_{config.select_route}.csv'
 
     model.eval()
 
@@ -100,7 +101,7 @@ def test(data_loader, model, config: GlobalConfig):
             log['test_metric'].append(total_metric)
             log['test_wp_metric'].append(metric_wp.item())
             log['model_elapsed_time'].append(model_elapsed_time)
-            pd.DataFrame(log).to_csv(save_dir_log / 'test_log.csv', index=False)
+            pd.DataFrame(log).to_csv(save_path, index=False)
 
             #save metadata prediksi
             save_dir_meta = save_dir / 'pred_meta'
@@ -138,7 +139,7 @@ def test(data_loader, model, config: GlobalConfig):
         log['model_elapsed_time'].append(np.std(log['model_elapsed_time'][:-1]))
 
         #paste ke csv file
-        pd.DataFrame(log).to_csv(save_dir_log / 'test_log.csv', index=False)
+        pd.DataFrame(log).to_csv(save_path, index=False)
 
     return log
 
@@ -155,7 +156,7 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
-    config.select_route = "ugm_baru"
+    config.select_route = "all"
 
 
     #SET GPU YANG AKTIF
@@ -165,7 +166,7 @@ def main():
 
     #IMPORT MODEL dan load bobot
     print("IMPORT ARSITEKTUR DL DAN COMPILE")
-    model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+    model = ai23(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
     model.load_state_dict(torch.load(config.logdir / 'best_model.pth'))
 
     karr_dataset = KarrDataset(config=config, phase="train") # change to "test" when deploy
@@ -175,7 +176,7 @@ def main():
     val_set     = split_dataset.val_set
     test_set    = split_dataset.test_set
 
-    dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
+    dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1, pin_memory=True)
 
     #test
     test_log = test(dataloader_test, model, config)

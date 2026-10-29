@@ -51,6 +51,7 @@ def test(data_loader, model, config: GlobalConfig):
     save_dir = config.logdir / "offline_test"
     save_dir.mkdir(parents=True, exist_ok=True)
     save_dir_log = save_dir
+    save_path = save_dir_log / f'test_log_{config.select_route}.csv'
 
     model.eval()
 
@@ -100,7 +101,8 @@ def test(data_loader, model, config: GlobalConfig):
             log['test_metric'].append(total_metric)
             log['test_wp_metric'].append(metric_wp.item())
             log['model_elapsed_time'].append(model_elapsed_time)
-            pd.DataFrame(log).to_csv(save_dir_log / 'test_log.csv', index=False)
+            
+            pd.DataFrame(log).to_csv(save_path, index=False)
 
             #save metadata prediksi
             save_dir_meta = save_dir / 'pred_meta'
@@ -138,7 +140,7 @@ def test(data_loader, model, config: GlobalConfig):
         log['model_elapsed_time'].append(np.std(log['model_elapsed_time'][:-1]))
 
         #paste ke csv file
-        pd.DataFrame(log).to_csv(save_dir_log / 'test_log.csv', index=False)
+        pd.DataFrame(log).to_csv(save_path, index=False)
 
     return log
 
@@ -155,7 +157,7 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
-    config.select_route = "ugm_baru"
+    config.select_route = "all"
 
 
     #SET GPU YANG AKTIF

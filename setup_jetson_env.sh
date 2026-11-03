@@ -16,7 +16,8 @@ sudo apt-get update && sudo apt-get install -y \
     libhdf5-dev libffi-dev \
     libgtk-3-dev libcanberra-gtk* \
     libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-    libv4l-dev v4l-utils wget
+    libv4l-dev v4l-utils wget \
+    ros-humble-cv-bridge
 
 echo "=== 2. Installing cuSPARSELt (NVIDIA Requirement for JetPack 6 / JP 24.06+) ==="
 if [ ! -f "/usr/local/cuda/include/cusparseLt.h" ]; then
@@ -87,6 +88,8 @@ cmake -D CMAKE_BUILD_TYPE=RELEASE \
 make -j$(nproc)
 make install
 cd ../..
+
+
 
 echo "=== 10. Verification ==="
 python -c "

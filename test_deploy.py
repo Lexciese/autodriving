@@ -43,22 +43,40 @@ class AverageMeter(object):
 def jetson_stat(jetson, config: GlobalConfig):
     stat = {
         'power_w': float('nan'),
+        'power_avg_w': float('nan'),
         'cpu_util_pct': float('nan'),
         'gpu_util_pct': float('nan'),
         'ram_used_mb': float('nan'),
         'vram_shared_mb': float('nan'),
         'vram_torch_mb': float('nan'),
+        'gpu_freq_mhz': float('nan'),
+        'gpu_temp_c': float('nan'),
+        'cpu_temp_c': float('nan'),
     }
     if jetson is not None:
         try:
             if jetson.ok(spin=True):
-                stat['power_w'] = jetson.power['tot']['power'] / 1000.0
+                power = jetson.power['tot']
+                stat['power_w'] = power['power'] / 1000.0
+                stat['power_avg_w'] = power.get('avg', power['power']) / 1000.0
                 cpu = jetson.cpu['total']
                 stat['cpu_util_pct'] = min(100.0, max(0.0, cpu['user'] + cpu['nice'] + cpu['system']))
                 stat['gpu_util_pct'] = float(jetson.stats.get('GPU', 0.0))
                 ram = jetson.memory['RAM']
                 stat['ram_used_mb'] = ram['used'] / 1024.0
                 stat['vram_shared_mb'] = ram.get('shared', 0) / 1024.0
+                for name in jetson.gpu:
+                    freq = jetson.gpu[name].get('freq', {}).get('cur')
+                    if freq:
+                        stat['gpu_freq_mhz'] = freq / 1000.0 if freq > 10000 else float(freq)
+                    break
+                temps = jetson.temperature
+                gpu_temp = temps.get('GPU', {}).get('temp')
+                if gpu_temp is not None:
+                    stat['gpu_temp_c'] = float(gpu_temp)
+                cpu_temp = temps.get('CPU', {}).get('temp')
+                if cpu_temp is not None:
+                    stat['cpu_temp_c'] = float(cpu_temp)
         except Exception as e:
             print(f"[jtop] failed to read stats: {e}")
     try:
@@ -67,7 +85,7 @@ def jetson_stat(jetson, config: GlobalConfig):
         pass
     return stat
 
-def test(data_loader, model, config: GlobalConfig, jetson=None):
+def test(data_loader, model, config: GlobalConfig, jetson=None, warmup_batches=3):
     score = {
         'total_metric': AverageMeter(),
         'wp_metric': AverageMeter()
@@ -75,15 +93,23 @@ def test(data_loader, model, config: GlobalConfig, jetson=None):
 
     log = OrderedDict([
         ('batch', []),
+        ('warmup', []),
         ('test_metric', []),
         ('test_wp_metric', []),
         ('model_elapsed_time', []),
+        ('model_fps', []),
         ('power_w', []),
+        ('power_avg_w', []),
+        ('energy_j', []),
+        ('fps_per_w', []),
         ('cpu_util_pct', []),
         ('gpu_util_pct', []),
         ('ram_used_mb', []),
         ('vram_shared_mb', []),
         ('vram_torch_mb', []),
+        ('gpu_freq_mhz', []),
+        ('gpu_temp_c', []),
+        ('cpu_temp_c', []),
     ])
     batch_ke = 1
 
@@ -122,8 +148,14 @@ def test(data_loader, model, config: GlobalConfig, jetson=None):
             pred_wp = model(bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, gt_velocity)
             model_elapsed_time = time.time() - model_start_time
 
-            #read jetson stats (power, cpu, gpu, ram, vram)
+            #baca statistik jetson (daya, cpu, gpu, ram, vram)
             stat = jetson_stat(jetson, config)
+
+            #hitung metrik deploy turunan (energi memakai power_avg_w)
+            is_warmup = batch_ke <= warmup_batches
+            model_fps = 1.0 / model_elapsed_time if model_elapsed_time > 0 else float('nan')
+            energy_j = stat['power_avg_w'] * model_elapsed_time
+            fps_per_w = model_fps / stat['power_avg_w'] if stat['power_avg_w'] > 0 else float('nan')
 
             #compute metric
             metric_wp = F.l1_loss(pred_wp, gt_waypoints)
@@ -136,22 +168,33 @@ def test(data_loader, model, config: GlobalConfig, jetson=None):
             postfix = OrderedDict([
                 ('te_total_m', score['total_metric'].avg),
                 ('te_wp_m', score['wp_metric'].avg),
-                ('power_w', stat['power_w']),
+                ('model_fps', model_fps),
+                ('power_avg_w', stat['power_avg_w']),
+                ('j_inf', energy_j),
+                ('fps_w', fps_per_w),
                 ('cpu_%', stat['cpu_util_pct']),
                 ('gpu_%', stat['gpu_util_pct']),
             ])
 
             #simpan history test ke file csv, ambil dari hasil kalkulasi metric langsung, jangan dari averagemeter
             log['batch'].append(batch_ke)
+            log['warmup'].append(is_warmup)
             log['test_metric'].append(total_metric)
             log['test_wp_metric'].append(metric_wp.item())
             log['model_elapsed_time'].append(model_elapsed_time)
+            log['model_fps'].append(model_fps)
             log['power_w'].append(stat['power_w'])
+            log['power_avg_w'].append(stat['power_avg_w'])
+            log['energy_j'].append(energy_j)
+            log['fps_per_w'].append(fps_per_w)
             log['cpu_util_pct'].append(stat['cpu_util_pct'])
             log['gpu_util_pct'].append(stat['gpu_util_pct'])
             log['ram_used_mb'].append(stat['ram_used_mb'])
             log['vram_shared_mb'].append(stat['vram_shared_mb'])
             log['vram_torch_mb'].append(stat['vram_torch_mb'])
+            log['gpu_freq_mhz'].append(stat['gpu_freq_mhz'])
+            log['gpu_temp_c'].append(stat['gpu_temp_c'])
+            log['cpu_temp_c'].append(stat['cpu_temp_c'])
             pd.DataFrame(log).to_csv(save_path, index=False)
 
             #save metadata prediksi
@@ -173,33 +216,110 @@ def test(data_loader, model, config: GlobalConfig, jetson=None):
                 yaml.dump(meta_pred, dict_file)
 
             batch_ke += 1
-            prog_bar.set_postfix(postfix)
+            prog_bar.set_postfix(postfix) # type: ignore
             prog_bar.update(1)
         prog_bar.close()
 
+        #batas sampel setelah warm-up
+        warm = min(warmup_batches, max(len(log['batch']) - 1, 0))
+
         #ketika semua sudah selesai, hitung rata2 performa pada log
         log['batch'].append("avg")
-        log['test_metric'].append(np.mean(log['test_metric']))
-        log['test_wp_metric'].append(np.mean(log['test_wp_metric']))
-        log['model_elapsed_time'].append(np.mean(log['model_elapsed_time']))
-        log['power_w'].append(np.nanmean(log['power_w']))
-        log['cpu_util_pct'].append(np.nanmean(log['cpu_util_pct']))
-        log['gpu_util_pct'].append(np.nanmean(log['gpu_util_pct']))
-        log['ram_used_mb'].append(np.nanmean(log['ram_used_mb']))
-        log['vram_shared_mb'].append(np.nanmean(log['vram_shared_mb']))
-        log['vram_torch_mb'].append(np.nanmean(log['vram_torch_mb']))
+        log['warmup'].append(float('nan'))
+        log['test_metric'].append(np.mean(log['test_metric'][warm:]))
+        log['test_wp_metric'].append(np.mean(log['test_wp_metric'][warm:]))
+        log['model_elapsed_time'].append(np.mean(log['model_elapsed_time'][warm:]))
+        log['model_fps'].append(np.mean(log['model_fps'][warm:]))
+        log['power_w'].append(np.nanmean(log['power_w'][warm:]))
+        log['power_avg_w'].append(np.nanmean(log['power_avg_w'][warm:]))
+        log['energy_j'].append(np.nanmean(log['energy_j'][warm:]))
+        log['fps_per_w'].append(np.nanmean(log['fps_per_w'][warm:]))
+        log['cpu_util_pct'].append(np.nanmean(log['cpu_util_pct'][warm:]))
+        log['gpu_util_pct'].append(np.nanmean(log['gpu_util_pct'][warm:]))
+        log['ram_used_mb'].append(np.nanmean(log['ram_used_mb'][warm:]))
+        log['vram_shared_mb'].append(np.nanmean(log['vram_shared_mb'][warm:]))
+        log['vram_torch_mb'].append(np.nanmean(log['vram_torch_mb'][warm:]))
+        log['gpu_freq_mhz'].append(np.nanmean(log['gpu_freq_mhz'][warm:]))
+        log['gpu_temp_c'].append(np.nanmean(log['gpu_temp_c'][warm:]))
+        log['cpu_temp_c'].append(np.nanmean(log['cpu_temp_c'][warm:]))
 
         #ketika semua sudah selesai, hitung VARIANCE performa pada log
         log['batch'].append("stddev")
-        log['test_metric'].append(np.std(log['test_metric'][:-1]))
-        log['test_wp_metric'].append(np.std(log['test_wp_metric'][:-1]))
-        log['model_elapsed_time'].append(np.std(log['model_elapsed_time'][:-1]))
-        log['power_w'].append(np.nanstd(log['power_w'][:-1]))
-        log['cpu_util_pct'].append(np.nanstd(log['cpu_util_pct'][:-1]))
-        log['gpu_util_pct'].append(np.nanstd(log['gpu_util_pct'][:-1]))
-        log['ram_used_mb'].append(np.nanstd(log['ram_used_mb'][:-1]))
-        log['vram_shared_mb'].append(np.nanstd(log['vram_shared_mb'][:-1]))
-        log['vram_torch_mb'].append(np.nanstd(log['vram_torch_mb'][:-1]))
+        log['warmup'].append(float('nan'))
+        log['test_metric'].append(np.std(log['test_metric'][warm:]))
+        log['test_wp_metric'].append(np.std(log['test_wp_metric'][warm:]))
+        log['model_elapsed_time'].append(np.std(log['model_elapsed_time'][warm:]))
+        log['model_fps'].append(np.std(log['model_fps'][warm:]))
+        log['power_w'].append(np.nanstd(log['power_w'][warm:]))
+        log['power_avg_w'].append(np.nanstd(log['power_avg_w'][warm:]))
+        log['energy_j'].append(np.nanstd(log['energy_j'][warm:]))
+        log['fps_per_w'].append(np.nanstd(log['fps_per_w'][warm:]))
+        log['cpu_util_pct'].append(np.nanstd(log['cpu_util_pct'][warm:]))
+        log['gpu_util_pct'].append(np.nanstd(log['gpu_util_pct'][warm:]))
+        log['ram_used_mb'].append(np.nanstd(log['ram_used_mb'][warm:]))
+        log['vram_shared_mb'].append(np.nanstd(log['vram_shared_mb'][warm:]))
+        log['vram_torch_mb'].append(np.nanstd(log['vram_torch_mb'][warm:]))
+        log['gpu_freq_mhz'].append(np.nanstd(log['gpu_freq_mhz'][warm:]))
+        log['gpu_temp_c'].append(np.nanstd(log['gpu_temp_c'][warm:]))
+        log['cpu_temp_c'].append(np.nanstd(log['cpu_temp_c'][warm:]))
+
+        #hitung persentil tail latency dan efisiensi
+        log['batch'].append("p50")
+        log['warmup'].append(float('nan'))
+        log['test_metric'].append(float('nan'))
+        log['test_wp_metric'].append(float('nan'))
+        log['model_elapsed_time'].append(np.nanpercentile(log['model_elapsed_time'][warm:], 50))
+        log['model_fps'].append(1.0 / np.nanpercentile(log['model_elapsed_time'][warm:], 50))
+        log['power_w'].append(float('nan'))
+        log['power_avg_w'].append(float('nan'))
+        log['energy_j'].append(np.nanpercentile(log['energy_j'][warm:], 50))
+        log['fps_per_w'].append(np.nanpercentile(log['fps_per_w'][warm:], 50))
+        log['cpu_util_pct'].append(float('nan'))
+        log['gpu_util_pct'].append(float('nan'))
+        log['ram_used_mb'].append(float('nan'))
+        log['vram_shared_mb'].append(float('nan'))
+        log['vram_torch_mb'].append(float('nan'))
+        log['gpu_freq_mhz'].append(float('nan'))
+        log['gpu_temp_c'].append(float('nan'))
+        log['cpu_temp_c'].append(float('nan'))
+
+        log['batch'].append("p95")
+        log['warmup'].append(float('nan'))
+        log['test_metric'].append(float('nan'))
+        log['test_wp_metric'].append(float('nan'))
+        log['model_elapsed_time'].append(np.nanpercentile(log['model_elapsed_time'][warm:], 95))
+        log['model_fps'].append(1.0 / np.nanpercentile(log['model_elapsed_time'][warm:], 95))
+        log['power_w'].append(float('nan'))
+        log['power_avg_w'].append(float('nan'))
+        log['energy_j'].append(np.nanpercentile(log['energy_j'][warm:], 95))
+        log['fps_per_w'].append(np.nanpercentile(log['fps_per_w'][warm:], 95))
+        log['cpu_util_pct'].append(float('nan'))
+        log['gpu_util_pct'].append(float('nan'))
+        log['ram_used_mb'].append(float('nan'))
+        log['vram_shared_mb'].append(float('nan'))
+        log['vram_torch_mb'].append(float('nan'))
+        log['gpu_freq_mhz'].append(float('nan'))
+        log['gpu_temp_c'].append(float('nan'))
+        log['cpu_temp_c'].append(float('nan'))
+
+        log['batch'].append("p99")
+        log['warmup'].append(float('nan'))
+        log['test_metric'].append(float('nan'))
+        log['test_wp_metric'].append(float('nan'))
+        log['model_elapsed_time'].append(np.nanpercentile(log['model_elapsed_time'][warm:], 99))
+        log['model_fps'].append(1.0 / np.nanpercentile(log['model_elapsed_time'][warm:], 99))
+        log['power_w'].append(float('nan'))
+        log['power_avg_w'].append(float('nan'))
+        log['energy_j'].append(np.nanpercentile(log['energy_j'][warm:], 99))
+        log['fps_per_w'].append(np.nanpercentile(log['fps_per_w'][warm:], 99))
+        log['cpu_util_pct'].append(float('nan'))
+        log['gpu_util_pct'].append(float('nan'))
+        log['ram_used_mb'].append(float('nan'))
+        log['vram_shared_mb'].append(float('nan'))
+        log['vram_torch_mb'].append(float('nan'))
+        log['gpu_freq_mhz'].append(float('nan'))
+        log['gpu_temp_c'].append(float('nan'))
+        log['cpu_temp_c'].append(float('nan'))
 
         #paste ke csv file
         pd.DataFrame(log).to_csv(save_path, index=False)
@@ -209,6 +329,7 @@ def test(data_loader, model, config: GlobalConfig, jetson=None):
 def main():
     parser = argparse.ArgumentParser(description="Model benchmarking in Jetson board")
     parser.add_argument("--route", action='append', type=str, help='set routes, you can combine multiple routes. e.g: --route "a" --route "b" ...')
+    parser.add_argument("--warmup", type=int, default=3, help='number of warm-up batches excluded from summary stats (default: 3)')
     args = parser.parse_args()
     # Load default config
     config: GlobalConfig = GlobalConfig()
@@ -257,7 +378,7 @@ def main():
 
     dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
-    #start jtop to log power, cpu, gpu, ram, and vram
+    #mulai jtop untuk log daya, cpu, gpu, ram, dan vram
     jetson = None
     if jtop is not None:
         try:
@@ -267,9 +388,20 @@ def main():
             print(f"[jtop] unavailable, energy stats will be NaN: {e}")
             jetson = None
 
+    #tampilkan info board dan mode daya
+    if jetson is not None:
+        try:
+            if jetson.ok(spin=True):
+                board = jetson.board.get('hardware', {})
+                print(f"[jtop] board={board.get('Model', 'unknown')} "
+                      f"nvpmodel={jetson.nvpmodel} jetson_clocks={jetson.jetson_clocks} "
+                      f"interval={jetson.interval}s")
+        except Exception as e:
+            print(f"[jtop] failed to read board metadata: {e}")
+
     #test
     try:
-        test_log = test(dataloader_test, model, config, jetson)
+        test_log = test(dataloader_test, model, config, jetson, args.warmup)
     finally:
         if jetson is not None:
             jetson.close()

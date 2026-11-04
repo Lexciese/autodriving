@@ -48,13 +48,7 @@ class KarrDataset(Dataset):
         self.imu_heading = []
         self.velocity = []
 
-        self.route_list = sorted(p.name for p in config.datadir.iterdir() if p.is_dir())
-
-        if self.config.select_route != "all":
-            self.route_list = [self.config.select_route]
-            print(f"only route: {self.config.select_route} is selected")
-
-        for route in self.route_list:
+        for route in self.config.select_route:
             path = self.config.datadir / route
             self.dir_meta      = path / "meta"             # .yml
             self.dir_rgb       = path / "camera" / "rgb"   # .png
@@ -363,11 +357,6 @@ class SplitDataset:
         self.dataset = dataset
         self.config = dataset.config
 
-        if self.config.select_route == "all":
-            routes = sorted(p.name for p in self.config.datadir.iterdir() if p.is_dir())
-        else:
-            routes = [self.config.select_route]
-
         seq_offset = self.config.seq_len - 1
         future_offset = self.config.pred_len * self.config.hz
 
@@ -376,7 +365,7 @@ class SplitDataset:
         test_indices = []
         route_offset = 0
 
-        for route in routes:
+        for route in self.config.select_route:
             route_path = self.config.datadir / route
             
             with open(route_path / "split.yml", "r") as f:

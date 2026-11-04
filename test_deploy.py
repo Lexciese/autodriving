@@ -10,7 +10,10 @@ import cv2
 from torch import torch
 import yaml
 from pathlib import Path
-from jtop import jtop # type: ignore
+try:
+    from jtop import jtop  # type: ignore
+except ImportError:
+    jtop = None
 
 from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
@@ -37,10 +40,34 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-def jetson_stat():
-    pass
+def jetson_stat(jetson, config: GlobalConfig):
+    stat = {
+        'power_w': float('nan'),
+        'cpu_util_pct': float('nan'),
+        'gpu_util_pct': float('nan'),
+        'ram_used_mb': float('nan'),
+        'vram_shared_mb': float('nan'),
+        'vram_torch_mb': float('nan'),
+    }
+    if jetson is not None:
+        try:
+            if jetson.ok(spin=True):
+                stat['power_w'] = jetson.power['tot']['power'] / 1000.0
+                cpu = jetson.cpu['total']
+                stat['cpu_util_pct'] = min(100.0, max(0.0, cpu['user'] + cpu['nice'] + cpu['system']))
+                stat['gpu_util_pct'] = float(jetson.stats.get('GPU', 0.0))
+                ram = jetson.memory['RAM']
+                stat['ram_used_mb'] = ram['used'] / 1024.0
+                stat['vram_shared_mb'] = ram.get('shared', 0) / 1024.0
+        except Exception as e:
+            print(f"[jtop] failed to read stats: {e}")
+    try:
+        stat['vram_torch_mb'] = torch.cuda.memory_allocated(config.gpu_device) / (1024.0 ** 2)
+    except Exception:
+        pass
+    return stat
 
-def test(data_loader, model, config: GlobalConfig):
+def test(data_loader, model, config: GlobalConfig, jetson=None):
     score = {
         'total_metric': AverageMeter(),
         'wp_metric': AverageMeter()
@@ -51,6 +78,12 @@ def test(data_loader, model, config: GlobalConfig):
         ('test_metric', []),
         ('test_wp_metric', []),
         ('model_elapsed_time', []),
+        ('power_w', []),
+        ('cpu_util_pct', []),
+        ('gpu_util_pct', []),
+        ('ram_used_mb', []),
+        ('vram_shared_mb', []),
+        ('vram_torch_mb', []),
     ])
     batch_ke = 1
 
@@ -89,6 +122,9 @@ def test(data_loader, model, config: GlobalConfig):
             pred_wp = model(bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, gt_velocity)
             model_elapsed_time = time.time() - model_start_time
 
+            #read jetson stats (power, cpu, gpu, ram, vram)
+            stat = jetson_stat(jetson, config)
+
             #compute metric
             metric_wp = F.l1_loss(pred_wp, gt_waypoints)
             total_metric = metric_wp.item()
@@ -99,7 +135,10 @@ def test(data_loader, model, config: GlobalConfig):
             #update visualisasi progress bar
             postfix = OrderedDict([
                 ('te_total_m', score['total_metric'].avg),
-                ('te_wp_m', score['wp_metric'].avg)
+                ('te_wp_m', score['wp_metric'].avg),
+                ('power_w', stat['power_w']),
+                ('cpu_%', stat['cpu_util_pct']),
+                ('gpu_%', stat['gpu_util_pct']),
             ])
 
             #simpan history test ke file csv, ambil dari hasil kalkulasi metric langsung, jangan dari averagemeter
@@ -107,6 +146,12 @@ def test(data_loader, model, config: GlobalConfig):
             log['test_metric'].append(total_metric)
             log['test_wp_metric'].append(metric_wp.item())
             log['model_elapsed_time'].append(model_elapsed_time)
+            log['power_w'].append(stat['power_w'])
+            log['cpu_util_pct'].append(stat['cpu_util_pct'])
+            log['gpu_util_pct'].append(stat['gpu_util_pct'])
+            log['ram_used_mb'].append(stat['ram_used_mb'])
+            log['vram_shared_mb'].append(stat['vram_shared_mb'])
+            log['vram_torch_mb'].append(stat['vram_torch_mb'])
             pd.DataFrame(log).to_csv(save_path, index=False)
 
             #save metadata prediksi
@@ -137,12 +182,24 @@ def test(data_loader, model, config: GlobalConfig):
         log['test_metric'].append(np.mean(log['test_metric']))
         log['test_wp_metric'].append(np.mean(log['test_wp_metric']))
         log['model_elapsed_time'].append(np.mean(log['model_elapsed_time']))
+        log['power_w'].append(np.nanmean(log['power_w']))
+        log['cpu_util_pct'].append(np.nanmean(log['cpu_util_pct']))
+        log['gpu_util_pct'].append(np.nanmean(log['gpu_util_pct']))
+        log['ram_used_mb'].append(np.nanmean(log['ram_used_mb']))
+        log['vram_shared_mb'].append(np.nanmean(log['vram_shared_mb']))
+        log['vram_torch_mb'].append(np.nanmean(log['vram_torch_mb']))
 
         #ketika semua sudah selesai, hitung VARIANCE performa pada log
         log['batch'].append("stddev")
         log['test_metric'].append(np.std(log['test_metric'][:-1]))
         log['test_wp_metric'].append(np.std(log['test_wp_metric'][:-1]))
         log['model_elapsed_time'].append(np.std(log['model_elapsed_time'][:-1]))
+        log['power_w'].append(np.nanstd(log['power_w'][:-1]))
+        log['cpu_util_pct'].append(np.nanstd(log['cpu_util_pct'][:-1]))
+        log['gpu_util_pct'].append(np.nanstd(log['gpu_util_pct'][:-1]))
+        log['ram_used_mb'].append(np.nanstd(log['ram_used_mb'][:-1]))
+        log['vram_shared_mb'].append(np.nanstd(log['vram_shared_mb'][:-1]))
+        log['vram_torch_mb'].append(np.nanstd(log['vram_torch_mb'][:-1]))
 
         #paste ke csv file
         pd.DataFrame(log).to_csv(save_path, index=False)
@@ -200,8 +257,22 @@ def main():
 
     dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
+    #start jtop to log power, cpu, gpu, ram, and vram
+    jetson = None
+    if jtop is not None:
+        try:
+            jetson = jtop()
+            jetson.start()
+        except Exception as e:
+            print(f"[jtop] unavailable, energy stats will be NaN: {e}")
+            jetson = None
+
     #test
-    test_log = test(dataloader_test, model, config)
+    try:
+        test_log = test(dataloader_test, model, config, jetson)
+    finally:
+        if jetson is not None:
+            jetson.close()
 
     #kosongkan cuda chace
     torch.cuda.empty_cache()

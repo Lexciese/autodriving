@@ -22,3 +22,4 @@ dependencies:
       - pypcd4
       - rosbags
       - dash
+      - jetson-stats

@@ -414,24 +414,21 @@ def main():
     torch.backends.cudnn.benchmark = True
 
     pipeline = GenerateLidSegDep(config)
-    routes = sorted([p for p in config.datadir.iterdir() if p.is_dir()])
-    if config.select_route != "all":
-        routes = [config.datadir / config.select_route]
-        print(f"only route: {config.select_route} is selected")
 
-    for route in routes:
+    for route in config.select_route:
         print(f"Processing route: {route}")
-        dir_meta = route / "meta"
-        dir_lidar = route / "lidar" / "cld"
+        route_path = config.datadir / route
+        dir_meta = route_path / "meta"
+        dir_lidar = route_path / "lidar" / "cld"
 
         target_dirs = {
-            'seg': route / "lidar" / "seg",
-            'bev_seg': route / "lidar" / "img" / "bev_seg",
-            'bev_dep': route / "lidar" / "img" / "bev_dep",
-            'front_seg': route / "lidar" / "img" / "front_seg",
-            'front_dep': route / "lidar" / "img" / "front_dep",
-            'rear_seg': route / "lidar" / "img" / "rear_seg",
-            'rear_dep': route / "lidar" / "img" / "rear_dep",
+            'seg': route_path / "lidar" / "seg",
+            'bev_seg': route_path / "lidar" / "img" / "bev_seg",
+            'bev_dep': route_path / "lidar" / "img" / "bev_dep",
+            'front_seg': route_path / "lidar" / "img" / "front_seg",
+            'front_dep': route_path / "lidar" / "img" / "front_dep",
+            'rear_seg': route_path / "lidar" / "img" / "rear_seg",
+            'rear_dep': route_path / "lidar" / "img" / "rear_dep",
         }
         
         for d in target_dirs.values():

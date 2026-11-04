@@ -40,12 +40,7 @@ def clean_gnss_coordinates(lats, lons):
     return df_fixed[lat_col].tolist(), df_fixed[lon_col].tolist()
 
 
-route_list = sorted(p.name for p in configx.datadir.iterdir() if p.is_dir())
-if configx.select_route != "all":
-    route_list = [configx.select_route]
-    print(f"only route: {configx.select_route} is selected")
-
-for route in route_list:
+for route in configx.select_route:
     route_path = configx.datadir / route
     ddir_meta = route_path / "meta"
     file_list = sorted(p.name for p in ddir_meta.iterdir())

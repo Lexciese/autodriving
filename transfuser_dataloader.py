@@ -2,6 +2,7 @@ from typing import cast
 import cv2
 import yaml
 import numpy as np
+import copy
 from pathlib import Path
 from tqdm import tqdm
 from pypcd4.pypcd4 import PointCloud
@@ -46,12 +47,8 @@ class KarrDataset(Dataset):
 
         self.route_list = sorted(p.name for p in config.datadir.iterdir() if p.is_dir())
 
-        if self.config.select_route != "all":
-            self.route_list = [self.config.select_route]
-            print(f"only route: {self.config.select_route} is selected")
-
         sample_idx = 0
-        for route in self.route_list:
+        for route in self.config.select_route:
             path = self.config.datadir / route
             self.dir_meta      = path / "meta"             # .yml
             self.dir_rgb       = path / "camera" / "rgb"   # .png
@@ -339,16 +336,12 @@ class SplitDataset:
         self.dataset = dataset
         self.config  = dataset.config
 
-        self.route_list = sorted(p.name for p in self.config.datadir.iterdir() if p.is_dir())
-        if self.config.select_route != "all":
-            self.route_list = [self.config.select_route]
-
         train_range = []
         val_range = []
         test_range = []
         route_offset = 0
 
-        for route in self.route_list:
+        for route in self.config.select_route:
             path = self.config.datadir / route / "split.yml"
             split_yml = yaml.safe_load(open(path, "r"))
             n_regions = split_yml["n_regions"]

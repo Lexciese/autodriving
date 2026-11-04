@@ -37,10 +37,10 @@ def _load_config():
 
 
 def _default_split_path(cfg):
-    """``<datadir>/<select_route>/split.yml`` when a concrete route is selected."""
-    selected = cfg.select_route
-    if selected and selected != "all":
-        return Path(cfg.datadir) / selected / "split.yml"
+    """``<datadir>/<select_route>/split.yml`` when exactly one route is selected."""
+    selected = list(cfg.select_route)
+    if len(selected) == 1:
+        return Path(cfg.datadir) / selected[0] / "split.yml"
     return None
 
 
@@ -226,7 +226,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Plot a split.yml with plotly.")
     parser.add_argument(
         "--split", type=Path, default=None,
-        help="Path to split.yml (default: <datadir>/<select_route>/split.yml).",
+        help="Path to split.yml (default: <datadir>/<select_route>/split.yml for a single route).",
     )
     parser.add_argument(
         "--meta", type=Path, default=None,

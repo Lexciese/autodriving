@@ -9,10 +9,12 @@ from config import GlobalConfig
 
 config = GlobalConfig()
 
-subfolders = sorted(p for p in config.datadir.iterdir() if p.is_dir() and (p / 'meta').exists())
-if config.select_route != "all":
-    subfolders = [config.datadir / config.select_route]
-    print(f"Only route: {config.select_route} is selected")
+subfolders = [
+    config.datadir / route
+    for route in config.select_route
+    if (config.datadir / route / 'meta').exists()
+]
+print(f"selected routes: {config.select_route}")
 
 for subfolder in subfolders:
     # 1. Read Raw Metadata Points

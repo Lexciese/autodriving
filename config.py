@@ -22,7 +22,7 @@ class GlobalConfig:
 
     # Data paths
     datadir = Path("/media/mf/AUTODRIVING-4TB1/AUTODRIVING-DATASET-extracted") # PROJECT_ROOT / "datasetx"
-    select_route = "all" # all # ringroad-711 # ugm_baru
+    select_route = ["ringroad-711", "ugm_baru", "selatan", "utara"]
     polarseg_weight_path = PROJECT_ROOT / "common" / "polarseg" / "SemKITTI_PolarSeg.pt"
     segformer_weight_path = PROJECT_ROOT / "common" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth"
     segformer_config_path = PROJECT_ROOT / "common" / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py"
@@ -57,7 +57,7 @@ class GlobalConfig:
     # Training
     inputs = 'segdep'  # segdep | seg | dep
     model = 'ai23' # xr20 
-    logdir = PROJECT_ROOT / "log" / f"{model}_{inputs}_seq1_{string_date}_route_{select_route}"
+    logdir = PROJECT_ROOT / "log" / f"{model}_{inputs}_seq1_{string_date}_route_{'_'.join(select_route)}"
     init_stop_counter = 40
     batch_size = 10
     lr = 1e-4  # learning rate (AdamW)

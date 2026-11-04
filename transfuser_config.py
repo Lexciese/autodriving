@@ -24,7 +24,7 @@ class GlobalConfig:
     model = 'transfuser'
 
     datadir = PROJECT_ROOT / "datasetx"
-    select_route = "ugm_baru"
+    select_route = ["ugm_baru"]
     polarseg_weight_path = PROJECT_ROOT / "common" / "polarseg" / "SemKITTI_PolarSeg.pt"
     segformer_weight_path = PROJECT_ROOT / "common" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes_20211206_072934-87a052ec.pth"
     segformer_config_path = PROJECT_ROOT / "common" / "segformer" / "configs" / "segformer" / "segformer_mit-b5_8x1_1024x1024_160k_cityscapes.py"
@@ -42,7 +42,7 @@ class GlobalConfig:
     n_wp = pred_len #waypoints
     wp_gap = int(1*5)  # frames between waypoints
     gap_bearing = wp_gap  # frames used for bearing estimation
-    logdir = PROJECT_ROOT / "log" / f"{model}_seq{seq_len}_{string_date}_route_{select_route}"
+    logdir = PROJECT_ROOT / "log" / f"{model}_seq{seq_len}_{string_date}_route_{'_'.join(select_route)}"
 
     #buat transfuser
     n_views = 1 # no. of camera views

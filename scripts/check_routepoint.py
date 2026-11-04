@@ -106,7 +106,8 @@ if __name__ == "__main__":
     from config import GlobalConfig
 
     config = GlobalConfig()
-    if config.select_route == "all":
-        raise ValueError("check_routepoint.py requires a single select_route, not 'all'")
-    route_file = config.datadir / config.select_route / f"{config.select_route}_routepoint_list.yml"
-    plot_yaml_route(route_file, output_html=f"{config.select_route}_routepoint_list.html")
+    if len(config.select_route) != 1:
+        raise ValueError("check_routepoint.py requires exactly one select_route")
+    route = config.select_route[0]
+    route_file = config.datadir / route / f"{route}_routepoint_list.yml"
+    plot_yaml_route(route_file, output_html=f"{route}_routepoint_list.html")

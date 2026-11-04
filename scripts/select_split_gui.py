@@ -17,12 +17,10 @@ config = GlobalConfig()
 DATADIR = Path(config.datadir)
 
 def available_routes():
-    selected = config.select_route
-    if selected != "all" and (DATADIR / selected / "meta").is_dir():
-        return [selected]
-    if DATADIR.is_dir():
-        return sorted(p.name for p in DATADIR.iterdir() if (p / "meta").is_dir())
-    return []
+    return [
+        route for route in config.select_route
+        if (DATADIR / route / "meta").is_dir()
+    ]
 
 
 def load_meta_points(meta_dir):

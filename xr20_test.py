@@ -51,7 +51,7 @@ def test(data_loader, model, config: GlobalConfig):
     save_dir = config.logdir / "offline_test"
     save_dir.mkdir(parents=True, exist_ok=True)
     save_dir_log = save_dir
-    save_path = save_dir_log / f'test_log_{config.select_route}.csv'
+    save_path = save_dir_log / f'test_log_{"_".join(config.select_route)}.csv'
 
     model.eval()
 
@@ -157,7 +157,6 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
-    config.select_route = "all"
 
 
     #SET GPU YANG AKTIF

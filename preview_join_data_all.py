@@ -18,11 +18,9 @@ speed_controller = PIDController(K_P=1.5, K_I=0.25, K_D=0.5, n=15)
 from config import GlobalConfig
 configx = GlobalConfig()
 
-# Loop pada semua route
-route_list = sorted(p.name for p in configx.datadir.iterdir() if p.is_dir())
-if configx.select_route != "all":
-    route_list = [configx.select_route]
-    print(f"only route: {configx.select_route} is selected")
+# Loop pada route yang dipilih
+route_list = list(configx.select_route)
+print(f"selected routes: {route_list}")
 for route in route_list:
     print(route)
 

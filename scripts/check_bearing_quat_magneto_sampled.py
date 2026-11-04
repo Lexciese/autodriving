@@ -27,11 +27,11 @@ def quaternion_to_yaw(q, offset=0):
     euler_angles = r.as_euler('zxy', degrees=True)
     return euler_angles[0]
 
-subfolders = sorted(
-    p for p in config.datadir.iterdir() if p.is_dir() and (p / "meta").exists()
-)
-if config.select_route != "all":
-    subfolders = [config.datadir / config.select_route]
+subfolders = [
+    config.datadir / route
+    for route in config.select_route
+    if (config.datadir / route / "meta").exists()
+]
 
 subfolder = subfolders[0]
 yml_files = sorted((subfolder / "meta").glob("*.yml"))

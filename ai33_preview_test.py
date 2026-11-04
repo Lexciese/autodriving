@@ -53,9 +53,9 @@ def test(data_loader, model, config: GlobalConfig):
     save_dir = config.logdir / "offline_test"
     save_dir.mkdir(parents=True, exist_ok=True)
     save_dir_log = save_dir
-    if config.select_route == "all":
-        raise ValueError("preview_test.py requires a single select_route, not 'all'")
-    base_dir = config.datadir / config.select_route
+    if len(config.select_route) != 1:
+        raise ValueError("preview_test.py requires exactly one select_route")
+    base_dir = config.datadir / config.select_route[0]
 
     out_video = None
 
@@ -294,7 +294,7 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
-    config.select_route = "ugm_baru"
+    config.select_route = ["ugm_baru"]
 
 
     #SET GPU YANG AKTIF

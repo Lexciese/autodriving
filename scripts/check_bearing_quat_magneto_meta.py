@@ -32,12 +32,12 @@ def quaternion_to_yaw(q_raw):
     return euler_angles[2]
 
 
-subfolders = sorted(
-    p for p in config.datadir.iterdir() if p.is_dir() and (p / "meta").exists()
-)
-if config.select_route != "all":
-    subfolders = [config.datadir / config.select_route]
-    print(f"Only route selected: {config.select_route}")
+subfolders = [
+    config.datadir / route
+    for route in config.select_route
+    if (config.datadir / route / "meta").exists()
+]
+print(f"selected routes: {config.select_route}")
 
 x0, y0 = config.magnetometer_calib["offset"]
 Q = np.array(config.magnetometer_calib["Q"])

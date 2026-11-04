@@ -252,7 +252,7 @@ if __name__ == "__main__":
             config=config,
             mode="video",
             fps=10,
-            output_path=f"dataset_preview_{config.select_route}_{SPLIT}.avi",
+            output_path=f"dataset_preview_{'_'.join(config.select_route)}_{SPLIT}.avi",
             min_frames= 0,
             num_workers=8
         )

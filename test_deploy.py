@@ -19,6 +19,12 @@ from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
+from xr20_model import xr20
+from xr20_dataloader import KarrDataset, SplitDataset
+
+from ai23_model import ai23
+from ai23_dataloader import KarrDataset, SplitDataset
+
 from ai33_model import ai33
 from ai33_dataloader import KarrDataset, SplitDataset
 
@@ -346,7 +352,7 @@ def main():
 
     available_route = ["ugm_baru", "ringroad-711", "utara", "selatan"]
     if len(sys.argv) == 1:
-        print("\n Available route: ")
+        print("\nAvailable route: ")
         for i, route in enumerate(available_route, 1):
             print(f"  [{i}] {route}")
         choices = input("Select routes [e.g. 1 3]: ").split()
@@ -365,8 +371,15 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"]=config.gpu_id
 
     #IMPORT MODEL dan load bobot
+    model_name = config.logdir.name.split('_', 1)[0] # ambil nama model dari nama folder log
     print("IMPORT ARSITEKTUR DL DAN COMPILE")
-    model = ai33(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+    print("current model of Logdir: ", model_name)
+    if model_name == "ai23":
+        model = ai23(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+    elif model_name == "ai33":
+            model = ai33(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
+    elif model_name == "xr20":
+            model = xr20(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
     model.load_state_dict(torch.load(config.logdir / 'best_model.pth'))
 
     karr_dataset = KarrDataset(config=config, phase="train") # change to "test" when deploy

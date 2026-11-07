@@ -85,6 +85,30 @@ def split_regions(points, regions, ratios=(0.8, 0.1, 0.1)):
     return splits
 
 
+def split_regions_manual(points, regions):
+    by_index = {p["index"]: p for p in points}
+    splits = {"train": [], "val": [], "test": []}
+    for region in regions:
+        target = region.get("split", "train")
+        if target not in splits:
+            target = "train"
+        for index in sorted(region["indices"]):
+            if index not in by_index:
+                continue
+            entry = dict(by_index[index])
+            entry["region"] = region["id"]
+            splits[target].append(entry)
+    return splits
+
+
+def split_ratios(split):
+    counts = [len(split[name]) for name in ("train", "val", "test")]
+    total = sum(counts)
+    if not total:
+        return (0.0, 0.0, 0.0)
+    return tuple(count / total for count in counts)
+
+
 def index_ranges(indices):
     ranges = []
     for index in sorted(indices):
@@ -169,8 +193,14 @@ def build_figure(points, regions, split=None, color_by_split=False, shapes=None)
         fig.add_trace(_scatter(unselected, f"unselected ({len(unselected)})", "#d9d9d9", size=6))
         for region in regions:
             members = [by_index[i] for i in region["indices"] if i in by_index]
-            color = PALETTE[(region["id"] - 1) % len(PALETTE)]
-            fig.add_trace(_scatter(members, f"Region {region['id']} ({len(members)})", color))
+            split_name = region.get("split")
+            if split_name in SPLIT_COLORS:
+                color = SPLIT_COLORS[split_name]
+                label = f"Region {region['id']} · {split_name} ({len(members)})"
+            else:
+                color = PALETTE[(region["id"] - 1) % len(PALETTE)]
+                label = f"Region {region['id']} ({len(members)})"
+            fig.add_trace(_scatter(members, label, color))
 
     fig.update_layout(
         dragmode="drawrect",
@@ -210,6 +240,19 @@ app.layout = html.Div(
                     clearable=False,
                     style={"width": "340px", "display": "inline-block", "verticalAlign": "middle"},
                 ),
+                html.Label("Mode:", style={"fontWeight": "bold", "marginLeft": "16px", "marginRight": "6px"}),
+                dcc.Dropdown(
+                    id="split-mode",
+                    options=[
+                        {"label": "Automatic (ratio)", "value": "auto"},
+                        {"label": "Train", "value": "train"},
+                        {"label": "Val", "value": "val"},
+                        {"label": "Test", "value": "test"},
+                    ],
+                    value="auto",
+                    clearable=False,
+                    style={"width": "180px", "display": "inline-block", "verticalAlign": "middle"},
+                ),
                 dcc.Checklist(
                     id="color-mode",
                     options=[{"label": "  Color by split", "value": "split"}],
@@ -239,9 +282,10 @@ app.layout = html.Div(
         ),
         html.Pre(id="status", style={"background": "#f5f5f5", "padding": "8px", "whiteSpace": "pre-wrap"}),
         html.Div(
-            "Draw one or more shapes for a region using the rectangle tool or the "
-            "'Draw closed path' lasso tool, click 'Commit Region', repeat for other "
-            "regions, then 'Compute Split' and 'Save split.yml'.",
+            "Automatic mode: draw shapes, commit regions, then 'Compute Split' to "
+            "split every region by the 0.8/0.1/0.1 ratio. Manual mode: pick Train, "
+            "Val or Test, then commit regions directly into that split; switch back "
+            "to a split to add or undo its regions. Use 'Save split.yml' when done.",
             style={"color": "#666", "fontSize": "12px"},
         ),
     ],
@@ -334,6 +378,7 @@ def _uncommitted_shapes(regions, shapes):
     Input("split-btn", "n_clicks"),
     Input("save-btn", "n_clicks"),
     Input("color-mode", "value"),
+    Input("split-mode", "value"),
     Input("map", "relayoutData"),
     State("points-store", "data"),
     State("regions-store", "data"),
@@ -341,10 +386,11 @@ def _uncommitted_shapes(regions, shapes):
     State("shapes-store", "data"),
 )
 def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
-           relayout, points, regions, split, shapes_store):
+           split_mode, relayout, points, regions, split, shapes_store):
     triggered = ctx.triggered_id
     color_by_split = bool(color_mode) and "split" in (color_mode or [])
     regions = regions or []
+    manual_target = split_mode if split_mode in ("train", "val", "test") else None
 
     # Load / reload points when the route changes (or on initial call).
     if triggered in (None, "route-dropdown") or points is None:
@@ -382,17 +428,31 @@ def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
                     "No unclaimed points inside the drawn shape(s).", no_update)
         region = {"id": len(regions) + 1, "shapes": new_shapes,
                   "indices": sorted(indices)}
+        if manual_target is not None:
+            region["split"] = manual_target
         regions = regions + [region]
         split = None
         fig = build_figure(points, regions, split, color_by_split)
+        suffix = f" into {manual_target}" if manual_target else ""
         return (no_update, regions, split, fig,
-                f"Committed Region {region['id']} ({len(indices)} points).", {})
+                f"Committed Region {region['id']} ({len(indices)} points){suffix}.", {})
 
     if triggered == "undo-btn":
         if not regions:
             return (no_update, no_update, no_update, no_update, "No regions to undo.", no_update)
-        removed = regions[-1]
-        regions = regions[:-1]
+        if manual_target is not None:
+            position = next(
+                (i for i in range(len(regions) - 1, -1, -1)
+                 if regions[i].get("split", "train") == manual_target),
+                None,
+            )
+            if position is None:
+                return (no_update, no_update, no_update, no_update,
+                        f"No regions in {manual_target} to undo.", no_update)
+        else:
+            position = len(regions) - 1
+        removed = regions[position]
+        regions = regions[:position] + regions[position + 1:]
         split = None
         fig = build_figure(points, regions, split, color_by_split)
         return (no_update, regions, split, fig, f"Removed Region {removed['id']}.", {})
@@ -407,21 +467,36 @@ def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
         if not regions:
             return (no_update, no_update, no_update, no_update,
                     "Commit at least one region first.", no_update)
-        split = split_regions(points, regions)
+        if manual_target is not None:
+            split = split_regions_manual(points, regions)
+            unassigned = sum(1 for r in regions if "split" not in r)
+            note = f" ({unassigned} region(s) defaulted to train)" if unassigned else ""
+            label = f"Manual split of {len(regions)} region(s){note}"
+        else:
+            split = split_regions(points, regions)
+            label = f"Split {len(regions)} region(s)"
         fig = build_figure(points, regions, split, True)
         summary = " | ".join(f"{k}: {len(v)}" for k, v in split.items())
-        return (no_update, no_update, split, fig, f"Split {len(regions)} region(s) -> {summary}", no_update)
+        return (no_update, no_update, split, fig, f"{label} -> {summary}", no_update)
 
     if triggered == "save-btn":
         if split is None:
             return (no_update, no_update, no_update, no_update,
                     "Compute a split before saving.", no_update)
-        out_path = save_split(route, split, regions, (0.8, 0.1, 0.1))
+        ratios = split_ratios(split) if manual_target is not None else (0.8, 0.1, 0.1)
+        out_path = save_split(route, split, regions, ratios)
         return (no_update, no_update, no_update, no_update, f"Saved split to {out_path}", no_update)
 
     if triggered == "color-mode":
         fig = build_figure(points, regions, split, color_by_split)
         return (no_update, no_update, no_update, fig, f"View for {routes_status}.", no_update)
+
+    if triggered == "split-mode":
+        split = None
+        fig = build_figure(points, regions, split, color_by_split)
+        target = manual_target or "automatic (ratio)"
+        return (no_update, no_update, split, fig,
+                f"Mode: {target}. {routes_status}.", no_update)
 
     # Fallback: refresh figure.
     fig = build_figure(points, regions, split, color_by_split)

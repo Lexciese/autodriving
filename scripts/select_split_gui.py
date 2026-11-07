@@ -89,9 +89,9 @@ def split_regions_manual(points, regions):
     by_index = {p["index"]: p for p in points}
     splits = {"train": [], "val": [], "test": []}
     for region in regions:
-        target = region.get("split", "train")
+        target = region.get("split")
         if target not in splits:
-            target = "train"
+            continue
         for index in sorted(region["indices"]):
             if index not in by_index:
                 continue
@@ -107,6 +107,86 @@ def split_ratios(split):
     if not total:
         return (0.0, 0.0, 0.0)
     return tuple(count / total for count in counts)
+
+
+SPLIT_NAMES = ("train", "val", "test")
+
+
+def normalize_ratios(values):
+    try:
+        raw = [max(0.0, float(value)) for value in values]
+    except (TypeError, ValueError):
+        raw = [0.8, 0.1, 0.1]
+    total = sum(raw)
+    if total <= 0:
+        return (0.8, 0.1, 0.1)
+    return tuple(value / total for value in raw)
+
+
+def target_counts(ratios, total):
+    if total <= 0:
+        return (0, 0, 0)
+    raw = [ratio * total for ratio in ratios]
+    floors = [int(value) for value in raw]
+    remainder = total - sum(floors)
+    order = sorted(range(len(raw)), key=lambda i: raw[i] - floors[i], reverse=True)
+    for position in order[:remainder]:
+        floors[position] += 1
+    return tuple(floors)
+
+
+def manual_regions(regions):
+    return [region for region in regions if region.get("split") in SPLIT_NAMES]
+
+
+def next_region_id(regions):
+    return max((region["id"] for region in regions), default=0) + 1
+
+
+def counts_by_split(regions):
+    counts = {name: 0 for name in SPLIT_NAMES}
+    for region in manual_regions(regions):
+        counts[region["split"]] += len(region.get("indices", []))
+    return counts
+
+
+def apply_ratios(regions, ratios):
+    """Reallocate manual regions so each split respects its ratio cap.
+
+    Points are drawn from each region's full selection and kept in commit
+    order; excess points are trimmed from the end. Because ``full_indices`` is
+    preserved, raising a ratio later restores previously trimmed points.
+    """
+    manual = manual_regions(regions)
+    if not manual:
+        return regions
+    source = {}
+    total = 0
+    for region in manual:
+        indices = sorted(region.get("full_indices", region.get("indices", [])))
+        source[region["id"]] = indices
+        total += len(indices)
+    targets = target_counts(normalize_ratios(ratios), total)
+    kept_by_split = {}
+    for position, name in enumerate(SPLIT_NAMES):
+        budget = targets[position]
+        kept = {}
+        for region in manual:
+            if region["split"] != name:
+                continue
+            take = source[region["id"]][:budget]
+            kept[region["id"]] = take
+            budget = max(0, budget - len(take))
+        kept_by_split[name] = kept
+    result = []
+    for region in regions:
+        if region.get("split") in SPLIT_NAMES:
+            updated = dict(region)
+            updated["indices"] = kept_by_split[region["split"]][region["id"]]
+            result.append(updated)
+        else:
+            result.append(region)
+    return result
 
 
 def index_ranges(indices):
@@ -262,6 +342,22 @@ app.layout = html.Div(
             ],
             style={"margin": "6px 0"},
         ),
+        html.Div(
+            [
+                html.Label("Manual ratios:", style={"fontWeight": "bold", "marginRight": "6px"}),
+                html.Label("Train", style={"marginRight": "4px"}),
+                dcc.Input(id="ratio-train", type="number", min=0, max=1, step=0.01,
+                          value=0.8, debounce=True, style={"width": "70px"}),
+                html.Label("Val", style={"marginLeft": "12px", "marginRight": "4px"}),
+                dcc.Input(id="ratio-val", type="number", min=0, max=1, step=0.01,
+                          value=0.1, debounce=True, style={"width": "70px"}),
+                html.Label("Test", style={"marginLeft": "12px", "marginRight": "4px"}),
+                dcc.Input(id="ratio-test", type="number", min=0, max=1, step=0.01,
+                          value=0.1, debounce=True, style={"width": "70px"}),
+            ],
+            style={"margin": "6px 0", "display": "flex", "alignItems": "center"},
+        ),
+        html.Div(id="counters", style={"margin": "4px 0", "fontFamily": "monospace", "fontSize": "13px"}),
         dcc.Graph(
             id="map",
             figure=build_figure([], []),
@@ -284,8 +380,10 @@ app.layout = html.Div(
         html.Div(
             "Automatic mode: draw shapes, commit regions, then 'Compute Split' to "
             "split every region by the 0.8/0.1/0.1 ratio. Manual mode: pick Train, "
-            "Val or Test, then commit regions directly into that split; switch back "
-            "to a split to add or undo its regions. Use 'Save split.yml' when done.",
+            "Val or Test, then commit regions directly into that split. Manual "
+            "ratios cap each split relative to all committed points; excess points "
+            "are trimmed from the end of the region, and changing a ratio re-trims "
+            "existing regions. Use 'Save split.yml' when done.",
             style={"color": "#666", "fontSize": "12px"},
         ),
     ],
@@ -379,6 +477,9 @@ def _uncommitted_shapes(regions, shapes):
     Input("save-btn", "n_clicks"),
     Input("color-mode", "value"),
     Input("split-mode", "value"),
+    Input("ratio-train", "value"),
+    Input("ratio-val", "value"),
+    Input("ratio-test", "value"),
     Input("map", "relayoutData"),
     State("points-store", "data"),
     State("regions-store", "data"),
@@ -386,11 +487,14 @@ def _uncommitted_shapes(regions, shapes):
     State("shapes-store", "data"),
 )
 def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
-           split_mode, relayout, points, regions, split, shapes_store):
+           split_mode, ratio_train, ratio_val, ratio_test, relayout,
+           points, regions, split, shapes_store):
     triggered = ctx.triggered_id
     color_by_split = bool(color_mode) and "split" in (color_mode or [])
     regions = regions or []
     manual_target = split_mode if split_mode in ("train", "val", "test") else None
+    ratios = normalize_ratios((ratio_train, ratio_val, ratio_test))
+    ratio_trigger = triggered in ("ratio-train", "ratio-val", "ratio-test")
 
     # Load / reload points when the route changes (or on initial call).
     if triggered in (None, "route-dropdown") or points is None:
@@ -421,21 +525,35 @@ def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
                     "Those shapes are already committed; draw a new one.", no_update)
         claimed = set()
         for region in regions:
-            claimed |= set(region["indices"])
+            claimed |= set(region.get("full_indices", region["indices"]))
         indices = indices_in_shapes(points, new_shapes, claimed)
         if not indices:
             return (no_update, no_update, no_update, no_update,
                     "No unclaimed points inside the drawn shape(s).", no_update)
-        region = {"id": len(regions) + 1, "shapes": new_shapes,
-                  "indices": sorted(indices)}
         if manual_target is not None:
-            region["split"] = manual_target
-        regions = regions + [region]
+            full = sorted(indices)
+            region = {"id": next_region_id(regions), "shapes": new_shapes,
+                      "split": manual_target, "full_indices": full,
+                      "indices": list(full)}
+            candidate = apply_ratios(regions + [region], ratios)
+            kept = next(len(r["indices"]) for r in candidate if r["id"] == region["id"])
+            if kept == 0:
+                return (no_update, no_update, no_update, no_update,
+                        f"{manual_target} is already at its ratio cap; region not committed.",
+                        no_update)
+            regions = candidate
+            trimmed = len(full) - kept
+            note = (f", kept {kept}/{len(full)} (trimmed {trimmed} to meet ratios)"
+                    if trimmed else f" ({kept} points)")
+            message = f"Committed Region {region['id']}{note} into {manual_target}."
+        else:
+            region = {"id": next_region_id(regions), "shapes": new_shapes,
+                      "indices": sorted(indices)}
+            regions = regions + [region]
+            message = f"Committed Region {region['id']} ({len(indices)} points)."
         split = None
         fig = build_figure(points, regions, split, color_by_split)
-        suffix = f" into {manual_target}" if manual_target else ""
-        return (no_update, regions, split, fig,
-                f"Committed Region {region['id']} ({len(indices)} points){suffix}.", {})
+        return (no_update, regions, split, fig, message, {})
 
     if triggered == "undo-btn":
         if not regions:
@@ -453,6 +571,8 @@ def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
             position = len(regions) - 1
         removed = regions[position]
         regions = regions[:position] + regions[position + 1:]
+        if manual_target is not None:
+            regions = apply_ratios(regions, ratios)
         split = None
         fig = build_figure(points, regions, split, color_by_split)
         return (no_update, regions, split, fig, f"Removed Region {removed['id']}.", {})
@@ -469,9 +589,9 @@ def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
                     "Commit at least one region first.", no_update)
         if manual_target is not None:
             split = split_regions_manual(points, regions)
-            unassigned = sum(1 for r in regions if "split" not in r)
-            note = f" ({unassigned} region(s) defaulted to train)" if unassigned else ""
-            label = f"Manual split of {len(regions)} region(s){note}"
+            unassigned = sum(1 for r in regions if r.get("split") not in SPLIT_NAMES)
+            note = f" ({unassigned} region(s) without a split ignored)" if unassigned else ""
+            label = f"Manual split of {len(regions) - unassigned} region(s){note}"
         else:
             split = split_regions(points, regions)
             label = f"Split {len(regions)} region(s)"
@@ -491,16 +611,48 @@ def handle(route, n_commit, n_undo, n_clear, n_split, n_save, color_mode,
         fig = build_figure(points, regions, split, color_by_split)
         return (no_update, no_update, no_update, fig, f"View for {routes_status}.", no_update)
 
+    if ratio_trigger:
+        if manual_target is not None:
+            regions = apply_ratios(regions, ratios)
+        split = None
+        fig = build_figure(points, regions, split, color_by_split)
+        ratio_text = " / ".join(f"{name} {value:.3g}" for name, value in zip(SPLIT_NAMES, ratios))
+        return (no_update, regions, split, fig,
+                f"Manual ratios set to {ratio_text}. {routes_status}.", no_update)
+
     if triggered == "split-mode":
+        if manual_target is not None:
+            regions = apply_ratios(regions, ratios)
         split = None
         fig = build_figure(points, regions, split, color_by_split)
         target = manual_target or "automatic (ratio)"
-        return (no_update, no_update, split, fig,
+        return (no_update, regions, split, fig,
                 f"Mode: {target}. {routes_status}.", no_update)
 
     # Fallback: refresh figure.
     fig = build_figure(points, regions, split, color_by_split)
     return (no_update, no_update, no_update, fig, no_update, no_update)
+
+
+@callback(
+    Output("counters", "children"),
+    Input("regions-store", "data"),
+    Input("split-mode", "value"),
+    Input("ratio-train", "value"),
+    Input("ratio-val", "value"),
+    Input("ratio-test", "value"),
+)
+def update_counters(regions, split_mode, ratio_train, ratio_val, ratio_test):
+    if split_mode not in SPLIT_NAMES:
+        return "Automatic mode — manual ratios are inactive."
+    ratios = normalize_ratios((ratio_train, ratio_val, ratio_test))
+    counts = counts_by_split(regions or [])
+    total = sum(counts.values())
+    targets = target_counts(ratios, total)
+    parts = [f"{name} {counts[name]}/{target}" for name, target in zip(SPLIT_NAMES, targets)]
+    parts.append(f"total {total}")
+    ratio_text = "/".join(f"{value:.3g}" for value in ratios)
+    return f"ratios {ratio_text}  |  " + " | ".join(parts)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,16 @@ configx = GlobalConfig()
 
 from preprocess_util import euler_from_quaternion, latlon_to_yaw, quaternion_to_yaw
 
+def is_valid_meta(m):
+    if not isinstance(m, dict) or not m:
+        return False
+    for v in m.values():
+        if v is None:
+            return False
+        if isinstance(v, (list, tuple)) and any(x is None for x in v):
+            return False
+    return True
+
 def clean_gnss_coordinates(lats, lons):
     df = pd.DataFrame({'latitude': lats, 'longitude': lons})
 
@@ -39,13 +49,19 @@ def clean_gnss_coordinates(lats, lons):
 
     return df_fixed[lat_col].tolist(), df_fixed[lon_col].tolist()
 
-
 for route in configx.select_route:
     route_path = configx.datadir / route
     ddir_meta = route_path / "meta"
-    file_list = sorted(p.name for p in ddir_meta.iterdir())
+    raw_file_list = sorted(p.name for p in ddir_meta.iterdir())
 
-    meta = [yaml.safe_load(open(ddir_meta / meta_file, "r")) for meta_file in file_list]
+    file_list = []
+    meta = []
+    for meta_file in tqdm(raw_file_list, desc="read meta"):
+        with open(ddir_meta / meta_file, "r") as f:
+            m = yaml.safe_load(f)
+        if is_valid_meta(m):
+            meta.append(m)
+            file_list.append(meta_file)
 
     raw_lats = [m['global_position_latlon'][0] for m in meta]
     raw_lons = [m['global_position_latlon'][1] for m in meta]

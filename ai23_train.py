@@ -3,6 +3,7 @@ import argparse
 import os
 import cv2
 from tqdm import tqdm
+from pathlib import Path
 from collections import OrderedDict
 import time
 import numpy as np
@@ -231,7 +232,9 @@ def main():
     parser.add_argument('--retrain', action='store_true', help='retrain the model in different dataset.')
     args = parser.parse_args()
     config: GlobalConfig = GlobalConfig()
+    PROJECT_ROOT = Path("/media/mf/SATA4TB/autodriving")
     config.model = "ai23"
+    logdir = PROJECT_ROOT / "log" / f"{config.model}_{config.inputs}_seq1_{config.string_date}_route_{'_'.join(config.select_route)}"
 
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"

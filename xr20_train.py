@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import cv2
 from tqdm import tqdm
+from pathlib import Path
 from collections import OrderedDict
 import time
 import numpy as np
@@ -227,6 +228,9 @@ def validate(data_loader, model, config: GlobalConfig, writer, cur_epoch):
 # MAIN FUNCTION
 def main():
     config: GlobalConfig = GlobalConfig()
+    PROJECT_ROOT = Path("/media/mf/SATA4TB/autodriving")
+    config.model = "xr20"
+    logdir = PROJECT_ROOT / "log" / f"{config.model}_{config.inputs}_seq1_{config.string_date}_route_{'_'.join(config.select_route)}"
 
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"

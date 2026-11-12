@@ -156,6 +156,8 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(GlobalConfig, log_config.GlobalConfig())
     config.logdir = logdir
+    # config.select_route = ["ringroad-711", "ugm_baru", "selatan", "utara"]
+    config.select_route = ["ugm_baru"]
 
 
     #SET GPU YANG AKTIF

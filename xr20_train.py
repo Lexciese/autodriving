@@ -230,7 +230,7 @@ def main():
     config: GlobalConfig = GlobalConfig()
     PROJECT_ROOT = Path("/media/mf/SATA4TB/autodriving")
     config.model = "xr20"
-    logdir = PROJECT_ROOT / "log" / f"{config.model}_{config.inputs}_seq1_{config.string_date}_route_{'_'.join(config.select_route)}"
+    config.logdir = PROJECT_ROOT / "log" / f"{config.model}_{config.inputs}_seq1_{config.string_date}_route_{'_'.join(config.select_route)}"
 
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"

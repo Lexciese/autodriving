@@ -297,7 +297,7 @@ def main():
         log_trainval = pd.read_csv(config.logdir / "trainval_log.csv")
         curr_ep = int(log_trainval['epoch'].iloc[-1]) + 1
         lowest_score = float(np.min(log_trainval['val_loss']))
-        stop_count = stop_count = config.init_stop_counter
+        stop_count = config.init_stop_counter
 
         latest_lw = [float(log_trainval['lw_wp'].iloc[-1])]
         params_lw = [torch.cuda.FloatTensor([latest_lw[0]]).clone().detach().requires_grad_(True)]
@@ -307,6 +307,7 @@ def main():
         config.logdir = config.logdir.parent / f"retrain_{config.logdir.name}"
         config.logdir.mkdir(parents=True, exist_ok=True)
         print('Created new retrain dir:', config.logdir)
+        shutil.copyfile(logdir / "trainval_log.csv", config.logdir / "trainval_log.csv")
 
         # Instantiate model and load state dicts from target log directory
         model = ai23(config, device=config.gpu_device).to(config.gpu_device, dtype=config.dtype)
@@ -333,23 +334,25 @@ def main():
     config_file_path = config_module.__file__
     shutil.copyfile(config_file_path, config.logdir / 'config.py')
 
-    log = OrderedDict([
-        ('epoch', []),
-        ('best_model', []),
-        ('val_loss', []),
-        ('val_wp_loss', []),
-        ('train_loss', []),
-        ('train_wp_loss', []),
-        ('lrate', []),
-        ('stop_counter', []),
-        ('lgrad_loss', []),
-        ('lw_wp', []),
-        ('elapsed_time', []),
-    ])
     writer = SummaryWriter(log_dir=config.logdir)
+    csv_path = config.logdir / 'trainval_log.csv'
 
     epoch = curr_ep
     while True:
+        log = OrderedDict([
+            ('epoch', []),
+            ('best_model', []),
+            ('val_loss', []),
+            ('val_wp_loss', []),
+            ('train_loss', []),
+            ('train_wp_loss', []),
+            ('lrate', []),
+            ('stop_counter', []),
+            ('lgrad_loss', []),
+            ('lw_wp', []),
+            ('elapsed_time', []),
+        ])
+
         print("Epoch: {:05d}------------------------------------------------".format(epoch))
         if config.MGN:
             curr_lw = optima_lw.param_groups[0]['params']
@@ -408,7 +411,8 @@ def main():
             log['best_model'].append("")
 
         log['stop_counter'].append(stop_count)
-        pd.DataFrame(log).to_csv(config.logdir / 'trainval_log.csv', mode='a', index=False)
+        write_header = not csv_path.exists()
+        pd.DataFrame(log).to_csv(csv_path, mode='a', header=write_header, index=False)
 
         if stop_count <= 0:
             print("TRAINING BERHENTI KARENA TIDAK ADA PENURUNAN TOTAL LOSS DALAM %d EPOCH TERAKHIR" % (config.init_stop_counter))

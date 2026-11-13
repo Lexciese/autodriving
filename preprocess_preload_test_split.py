@@ -18,7 +18,7 @@ from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from a_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, resize_img, cls2one_hot, colorize_depth
 from a_utility import hampel_filter, bearing_filter
 from config import GlobalConfig
-from preprocess_lidar import gen_bev_front_rear_seg_dep_numpy
+from preprocess_lidar import gen_bev_front_rear_seg_dep_numpy, get_pcd
 from a_dataloader import KarrDataset
 
 def _identity_collate(batch):
@@ -87,9 +87,14 @@ class SplitDataset:
             preload_test_hdf5_path = route_path / f"preload_test_split_seq{self.config.seq_len}_pred{self.config.pred_len}.hdf5"
 
             if preload_test_hdf5_path.exists():
-                continue
+                with h5py.File(preload_test_hdf5_path, "r", locking=False) as existing_hdf5:
+                    existing_keys = list(existing_hdf5.keys())
+                    has_raw_pcd = len(existing_keys) > 0 and all("raw_pcd" in existing_hdf5[key] for key in existing_keys)
+                if has_raw_pcd:
+                    continue
 
-            route_test_set = Subset(self.test_dataset, self.test_indices_by_route[route])
+            route_indices = self.test_indices_by_route[route]
+            route_test_set = Subset(self.test_dataset, route_indices)
             test_loader = DataLoader(
                 route_test_set,
                 batch_size=1,
@@ -121,6 +126,11 @@ class SplitDataset:
                     idx_node.create_dataset("bearing_robot", data=data["bearing_robot"])
                     idx_node.create_dataset("lat_robot", data=data["lat_robot"])
                     idx_node.create_dataset("lon_robot", data=data["lon_robot"])
+
+                    raw_pcd_group = idx_node.create_group("raw_pcd")
+                    raw_pcd_paths = self.test_dataset.raw_pcd[route_indices[idx]]
+                    for raw_idx, raw_pcd_path in enumerate(raw_pcd_paths):
+                        raw_pcd_group.create_dataset(str(raw_idx), data=get_pcd(str(raw_pcd_path)), chunks=True, **zstd)
             tmp_hdf5_path.replace(preload_test_hdf5_path)
 
         return self

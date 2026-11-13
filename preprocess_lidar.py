@@ -378,6 +378,22 @@ class GenerateLidSegDep:
         model.eval()
         return model
 
+    def segment(self, raw_pcd: np.ndarray):
+        pcd_tensor = torch.from_numpy(raw_pcd).to(self.config.gpu_device, dtype=self.config.dtype)
+
+        with torch.no_grad():
+            grid_ind, pt_fea = preproc_spherical_tensor(
+                pcd_tensor,
+                self.min_volume_space,
+                self.max_volume_space,
+                self.grid_size,
+                self.config.max_intensity
+            )
+            logits = self.model([pt_fea], [grid_ind[:, :2]])
+            ptseg = torch.argmax(logits, 1)[0, grid_ind[:, 0], grid_ind[:, 1], grid_ind[:, 2]] + 1
+
+        return ptseg.cpu().numpy()
+
     def run(self, input_source: PathLike):
         raw_pcd = get_pcd(input_source)
         pcd_tensor = torch.from_numpy(raw_pcd).to(self.config.gpu_device, dtype=self.config.dtype)

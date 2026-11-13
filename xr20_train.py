@@ -15,7 +15,7 @@ torch.backends.cudnn.benchmark = True
 
 import shutil
 from xr20_model import xr20
-from xr20_dataloader import KarrDataset, SplitDataset
+from a_dataloader import KarrDataset, SplitDataset
 from config import GlobalConfig
 import config as config_module
 

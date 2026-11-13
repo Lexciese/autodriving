@@ -14,7 +14,7 @@ import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
 from xr20_model import xr20
-from xr20_dataloader import KarrDataset, SplitDataset
+from a_dataloader import KarrDataset, SplitDataset
 
 from preprocess_util import plot_lidbev_rpwp, plot_lidfront_rpwp
 

@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, Subset
 from tqdm import tqdm
 
 from config import GlobalConfig
-from ai23_dataloader import KarrDataset, SplitDataset
+from a_dataloader import KarrDataset, SplitDataset
 from preprocess_util import plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp
 
 

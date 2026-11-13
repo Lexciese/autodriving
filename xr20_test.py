@@ -14,7 +14,7 @@ import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
 from xr20_model import xr20
-from xr20_dataloader import KarrDataset, SplitDataset
+from a_dataloader import KarrDataset, SplitDataset
 
 # use the config from the log directory
 from config import GlobalConfig, select_logdir

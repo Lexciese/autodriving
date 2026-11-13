@@ -16,7 +16,7 @@ torch.backends.cudnn.benchmark = True
 
 import shutil
 from ai23_model import ai23
-from ai23_dataloader import KarrDataset, SplitDataset
+from a_dataloader import KarrDataset, SplitDataset
 from config import GlobalConfig, select_logdir
 import config as config_module
 

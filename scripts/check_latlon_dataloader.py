@@ -7,7 +7,7 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config import GlobalConfig
-from ai23_dataloader import KarrDataset
+from a_dataloader import KarrDataset
 
 def plot_dataset_trajectory(
     dataset: KarrDataset, 

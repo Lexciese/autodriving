@@ -14,7 +14,7 @@ import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
 from ai33_model import ai33
-from ai33_dataloader import KarrDataset, SplitDataset
+from a_dataloader import KarrDataset, SplitDataset
 
 # use the config from the log directory
 from config import GlobalConfig, select_logdir

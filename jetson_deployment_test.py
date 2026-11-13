@@ -20,13 +20,9 @@ import torch.nn.functional as F
 torch.backends.cudnn.benchmark = True
 
 from xr20_model import xr20
-from xr20_dataloader import KarrDataset, SplitDataset
-
 from ai23_model import ai23
-from ai23_dataloader import KarrDataset, SplitDataset
-
 from ai33_model import ai33
-from ai33_dataloader import KarrDataset, SplitDataset
+from jetson_deployment_dataloader import KarrDataset
 
 # use the config from the log directory
 from config import GlobalConfig, select_logdir
@@ -383,13 +379,8 @@ def main():
     model.load_state_dict(torch.load(config.logdir / 'best_model.pth'))
 
     karr_dataset = KarrDataset(config=config, phase="train") # change to "test" when deploy
-    split_dataset = SplitDataset(karr_dataset)
-    total_len = split_dataset.total_len
-    train_set   = split_dataset.train_set
-    val_set     = split_dataset.val_set
-    test_set    = split_dataset.test_set
 
-    dataloader_test = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
+    dataloader_test = DataLoader(karr_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
     #mulai jtop untuk log daya, cpu, gpu, ram, dan vram
     jetson = None

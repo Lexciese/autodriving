@@ -66,14 +66,11 @@ echo "=== 8. Compiling CUDA Extensions (torch-scatter) ==="
 pip install --no-build-isolation --no-cache-dir torch-scatter hdf5plugin dropblock
 
 echo "=== 9. Building OpenCV with CUDA 8.7 (AGX Orin Architecture) ==="
-OPENCV_VERSION="4.9.0"
-if [ ! -d "opencv" ]; then
-    git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git
-    git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
-fi
+OPENCV_VERSION="4.11.0"
+git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git
+git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
 
 mkdir -p opencv/build && cd opencv/build
-
 cmake -D CMAKE_BUILD_TYPE=RELEASE \
       -D CMAKE_INSTALL_PREFIX=$(python -c "import sys; print(sys.prefix)") \
       -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \

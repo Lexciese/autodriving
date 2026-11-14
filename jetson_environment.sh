@@ -53,12 +53,13 @@ pip install "numpy<2.0.0"
 pip install --no-cache-dir "${NVIDIA_TORCH_URL}"
 
 echo "=== 7. Building TorchVision v0.20.0 from Source ==="
+pip install "setuptools<70.0.0" wheel
 if [ ! -d "vision" ]; then
     git clone --branch v0.20.0 https://github.com/pytorch/vision.git
 fi
 cd vision
 export BUILD_VERSION=0.20.0
-python3 setup.py install
+pip install --no-build-isolation --no-deps .
 cd ..  # Move back out to prevent namespace conflicts during import
 
 echo "=== 8. Compiling CUDA Extensions (torch-scatter) ==="

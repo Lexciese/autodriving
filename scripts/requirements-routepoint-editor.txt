@@ -1,7 +1,0 @@
-dash>=4.4
-plotly>=7.0
-PyYAML>=6.0
-numpy>=2.0
-requests>=2.30
-Pillow>=10.0
-scipy>=1.10

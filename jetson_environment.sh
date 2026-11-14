@@ -67,27 +67,33 @@ pip install --no-build-isolation --no-cache-dir torch-scatter hdf5plugin dropblo
 
 echo "=== 9. Building OpenCV with CUDA 8.7 (AGX Orin Architecture) ==="
 OPENCV_VERSION="4.11.0"
-git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git
-git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
 
-mkdir -p opencv/build && cd opencv/build
-cmake -D CMAKE_BUILD_TYPE=RELEASE \
-      -D CMAKE_INSTALL_PREFIX=$(python -c "import sys; print(sys.prefix)") \
-      -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
-      -D WITH_CUDA=ON \
-      -D CUDA_ARCH_BIN=8.7 \
-      -D WITH_CUDNN=ON \
-      -D OPENCV_DNN_CUDA=ON \
-      -D WITH_GSTREAMER=ON \
-      -D WITH_LIBV4L=ON \
-      -D BUILD_opencv_python3=ON \
-      -D PYTHON3_EXECUTABLE=$(which python) ..
+if python -c "import cv2; assert cv2.__version__ == '${OPENCV_VERSION}' and cv2.cuda.getCudaEnabledDeviceCount() > 0" 2>/dev/null; then
+    echo "OpenCV ${OPENCV_VERSION} with CUDA is already installed. Skipping build..."
+else
+    if [ ! -d "opencv" ]; then
+        git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git
+        git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
+    fi
 
-make -j$(nproc)
-make install
-cd ../..
+    mkdir -p opencv/build && cd opencv/build
 
+    cmake -D CMAKE_BUILD_TYPE=RELEASE \
+          -D CMAKE_INSTALL_PREFIX=$(python -c "import sys; print(sys.prefix)") \
+          -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
+          -D WITH_CUDA=ON \
+          -D CUDA_ARCH_BIN=8.7 \
+          -D WITH_CUDNN=ON \
+          -D OPENCV_DNN_CUDA=ON \
+          -D WITH_GSTREAMER=ON \
+          -D WITH_LIBV4L=ON \
+          -D BUILD_opencv_python3=ON \
+          -D PYTHON3_EXECUTABLE=$(which python) ..
 
+    make -j$(nproc)
+    make install
+    cd ../..
+fi
 
 echo "=== 10. Verification ==="
 python -c "

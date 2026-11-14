@@ -53,14 +53,17 @@ pip install "numpy<2.0.0"
 pip install --no-cache-dir "${NVIDIA_TORCH_URL}"
 
 echo "=== 7. Building TorchVision v0.20.0 from Source ==="
-pip install "setuptools<70.0.0" wheel
-if [ ! -d "vision" ]; then
-    git clone --branch v0.20.0 https://github.com/pytorch/vision.git
+if python -c "import torchvision; assert torchvision.__version__.startswith('0.20.0')" 2>/dev/null; then
+    echo "TorchVision 0.20.0 is already installed. Skipping build..."
+else
+    if [ ! -d "vision" ]; then
+        git clone --branch v0.20.0 https://github.com/pytorch/vision.git
+    fi
+    cd vision
+    export BUILD_VERSION=0.20.0
+    pip install --no-build-isolation --no-deps .
+    cd ..  # Move back out to prevent namespace conflicts during import
 fi
-cd vision
-export BUILD_VERSION=0.20.0
-pip install --no-build-isolation --no-deps .
-cd ..  # Move back out to prevent namespace conflicts during import
 
 echo "=== 8. Compiling CUDA Extensions (torch-scatter) ==="
 pip install --no-build-isolation --no-cache-dir torch-scatter hdf5plugin dropblock
@@ -71,15 +74,24 @@ OPENCV_VERSION="4.11.0"
 if python -c "import cv2; assert cv2.__version__ == '${OPENCV_VERSION}' and cv2.cuda.getCudaEnabledDeviceCount() > 0" 2>/dev/null; then
     echo "OpenCV ${OPENCV_VERSION} with CUDA is already installed. Skipping build..."
 else
+    # Clean up any leftover 4.9.0 / 4.10.0 source directories if present
+    if [ -d "opencv" ] && ! git -C opencv describe --tags 2>/dev/null | grep -q "${OPENCV_VERSION}"; then
+        echo "Removing mismatched OpenCV source folders..."
+        rm -rf opencv opencv_contrib
+    fi
+
     if [ ! -d "opencv" ]; then
         git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git
         git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
     fi
 
     mkdir -p opencv/build && cd opencv/build
+    CONDA_LIB="${CONDA_PREFIX}/lib"
 
     cmake -D CMAKE_BUILD_TYPE=RELEASE \
-          -D CMAKE_INSTALL_PREFIX=$(python -c "import sys; print(sys.prefix)") \
+          -D CMAKE_INSTALL_PREFIX=${CONDA_PREFIX} \
+          -D CMAKE_EXE_LINKER_FLAGS="-L${CONDA_LIB} -Wl,-rpath-link,${CONDA_LIB}" \
+          -D CMAKE_SHARED_LINKER_FLAGS="-L${CONDA_LIB} -Wl,-rpath-link,${CONDA_LIB}" \
           -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib/modules \
           -D WITH_CUDA=ON \
           -D CUDA_ARCH_BIN=8.7 \
@@ -87,6 +99,8 @@ else
           -D OPENCV_DNN_CUDA=ON \
           -D WITH_GSTREAMER=ON \
           -D WITH_LIBV4L=ON \
+          -D BUILD_TESTS=OFF \
+          -D BUILD_PERF_TESTS=OFF \
           -D BUILD_opencv_python3=ON \
           -D PYTHON3_EXECUTABLE=$(which python) ..
 

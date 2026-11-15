@@ -77,27 +77,33 @@ def jetson_stat(jetson, config: GlobalConfig):
             if jetson.ok(spin=True):
                 power = jetson.power['tot']
                 stat['power_w'] = power['power'] / 1000.0
-                stat['power_avg_w'] = power.get('avg', power['power']) / 1000.0
+                stat['power_avg_w'] = power['avg'] / 1000.0 if 'avg' in power else stat['power_w']
+
                 cpu = jetson.cpu['total']
                 stat['cpu_util_pct'] = min(100.0, max(0.0, cpu['user'] + cpu['nice'] + cpu['system']))
-                stat['gpu_util_pct'] = float(jetson.stats.get('GPU', 0.0))
-                ram = jetson.memory['RAM']
-                stat['ram_used_mb'] = ram['used'] / 1024.0
-                stat['vram_shared_mb'] = ram.get('shared', 0) / 1024.0
+
                 for name in jetson.gpu:
-                    freq = jetson.gpu[name].get('freq', {}).get('cur')
-                    if freq:
+                    gpu_info = jetson.gpu[name]
+                    if 'status' in gpu_info and 'load' in gpu_info['status']:
+                        stat['gpu_util_pct'] = float(gpu_info['status']['load'])
+                    if 'freq' in gpu_info and 'cur' in gpu_info['freq']:
+                        freq = gpu_info['freq']['cur']
                         stat['gpu_freq_mhz'] = freq / 1000.0 if freq > 10000 else float(freq)
                     break
+
+                ram = jetson.memory['RAM']
+                stat['ram_used_mb'] = ram['used'] / 1024.0
+                stat['vram_shared_mb'] = ram['shared'] / 1024.0 if 'shared' in ram else 0.0
+
                 temps = jetson.temperature
-                gpu_temp = temps.get('GPU', {}).get('temp')
-                if gpu_temp is not None:
-                    stat['gpu_temp_c'] = float(gpu_temp)
-                cpu_temp = temps.get('CPU', {}).get('temp')
-                if cpu_temp is not None:
-                    stat['cpu_temp_c'] = float(cpu_temp)
+                if 'gpu' in temps and temps['gpu'].get('online', False):
+                    stat['gpu_temp_c'] = float(temps['gpu']['temp'])
+                if 'cpu' in temps and temps['cpu'].get('online', False):
+                    stat['cpu_temp_c'] = float(temps['cpu']['temp'])
         except Exception as e:
             print(f"[jtop] failed to read stats: {e}")
+            traceback.print_exc()
+
     try:
         stat['vram_torch_mb'] = torch.cuda.memory_allocated(config.gpu_device) / (1024.0 ** 2)
     except Exception:

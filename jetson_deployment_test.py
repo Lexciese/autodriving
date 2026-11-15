@@ -164,10 +164,10 @@ def test(data_loader, model, config: GlobalConfig, jetson=None, warmup_batches=3
             front_segs = []
             front_deps = []
             for i in range(0, config.seq_len):
-                bev_segs.append(torch.tensor(data['bev_segs'][i]).to(config.gpu_device, dtype=config.dtype))
-                bev_deps.append(torch.tensor(data['bev_deps'][i]).to(config.gpu_device, dtype=config.dtype))
-                front_segs.append(torch.tensor(data['front_segs'][i]).to(config.gpu_device, dtype=config.dtype))
-                front_deps.append(torch.tensor(data['front_deps'][i]).to(config.gpu_device, dtype=config.dtype))
+                bev_segs.append(data['bev_segs'][i].to(config.gpu_device, dtype=config.dtype))
+                bev_deps.append(data['bev_deps'][i].to(config.gpu_device, dtype=config.dtype))
+                front_segs.append(data['front_segs'][i].to(config.gpu_device, dtype=config.dtype))
+                front_deps.append(data['front_deps'][i].to(config.gpu_device, dtype=config.dtype))
 
             rp1 = torch.stack(data['rp1'], dim=1).to(config.gpu_device, dtype=config.dtype)
             rp2 = torch.stack(data['rp2'], dim=1).to(config.gpu_device, dtype=config.dtype)

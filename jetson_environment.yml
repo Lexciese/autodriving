@@ -22,4 +22,5 @@ dependencies:
       - pypcd4
       - rosbags
       - dash
+      - numba
       - jetson-stats

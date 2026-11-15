@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 import argparse
 import pandas as pd
 from tqdm import tqdm

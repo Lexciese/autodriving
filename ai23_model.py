@@ -12,31 +12,50 @@ def kaiming_init(m):
     elif isinstance(m, nn.Linear):
         nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
 
-class DSConv(nn.Module):
+class DSConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, dilation, padding, stride):
         super().__init__()
-        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1, groups=in_channels)
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=kernel_size, dilation=dilation, padding=padding, stride=stride, groups=in_channels)
+        self.bn1 = nn.BatchNorm2d(in_channels)
+        self.relu1 = nn.ReLU()
         self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu2 = nn.ReLU()
 
     def forward(self, x):
-        out = self.depthwise(x)
-        out = self.pointwise(out)
-        return out
+        x = self.depthwise(x)
+        x = self.bn1(x)
+        x = self.relu1(x)
+        x = self.pointwise(x)
+        x = self.bn2(x)
+        y = self.relu2(x)
+        return y
 
-class DoubleConv(nn.Module):
+class DoubleDSConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, dilation, padding, stride):
+        super().__init__()
+        self.block1 = DSConvBlock(in_channels, out_channels, kernel_size, dilation, padding, stride)
+        self.block2 = DSConvBlock(out_channels, out_channels, kernel_size, dilation, padding, stride)
+        self.block1.apply(kaiming_init)
+        self.block2.apply(kaiming_init)
+
+    def forward(self, x):
+        x = self.block1(x)
+        y = self.block2(x)
+        return y
+
+class Double2DConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, dilation, padding, stride):
         super().__init__()
         self.block1 = nn.Sequential(
-            DSConv(in_channels, out_channels, kernel_size, dilation, padding, stride),
+            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, dilation=dilation, stride=stride, padding=padding, padding_mode='zeros'),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
-            nn.Dropout2d(0.1)
+            nn.ReLU()
         )
         self.block2 = nn.Sequential(
-            DSConv(out_channels, out_channels, kernel_size, dilation, padding, stride),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel_size, dilation=dilation, stride=stride, padding=padding, padding_mode='zeros'),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
-            nn.Dropout2d(0.1)
+            nn.ReLU()
         )
         self.block1.apply(kaiming_init)
         self.block2.apply(kaiming_init)
@@ -46,14 +65,13 @@ class DoubleConv(nn.Module):
         y = self.block2(x)
         return y
 
-
 class EncoderBlock(nn.Module):
     def __init__(self, in_channels, feature_map, is_bev):
         super().__init__()
-        self.layer1 = DoubleConv(in_channels=in_channels, out_channels=feature_map[0], kernel_size=5, dilation=2, padding=3, stride=1)
-        self.layer2 = DoubleConv(in_channels=feature_map[0], out_channels=feature_map[1], kernel_size=3, dilation=2, padding=2, stride=1)
-        self.layer3 = DoubleConv(in_channels=feature_map[1], out_channels=feature_map[2], kernel_size=3, dilation=1, padding=1, stride=1)
-        self.layer4 = DoubleConv(in_channels=feature_map[2], out_channels=feature_map[3], kernel_size=3, dilation=1, padding=1, stride=1)
+        self.layer1 = Double2DConv(in_channels=in_channels, out_channels=feature_map[0], kernel_size=5, dilation=2, padding=3, stride=1)
+        self.layer2 = DoubleDSConv(in_channels=feature_map[0], out_channels=feature_map[1], kernel_size=3, dilation=2, padding=2, stride=1)
+        self.layer3 = DoubleDSConv(in_channels=feature_map[1], out_channels=feature_map[2], kernel_size=3, dilation=1, padding=1, stride=1)
+        self.layer4 = DoubleDSConv(in_channels=feature_map[2], out_channels=feature_map[3], kernel_size=3, dilation=1, padding=1, stride=1)
         if is_bev == True:
             self.pool1 = nn.AvgPool2d(kernel_size=[2, 2])
             self.pool2 = nn.AvgPool2d(kernel_size=[4, 4])
@@ -104,11 +122,11 @@ class ai23(nn.Module):
         self.fro_encoder_block = EncoderBlock(in_channels=in_ch, feature_map=feature_map, is_bev=False)
         self.necks_net = NecksNet(feature_map=feature_map)
         self.gru = nn.GRUCell(input_size=7, hidden_size=feature_map[2])
-        self.pred_dwp = nn.Sequential( 
+        self.pred_dwp = nn.Sequential(
             nn.Linear(feature_map[2], feature_map[1]),
             nn.Linear(feature_map[1], 2)
         )
-        
+
     def forward(self, bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, velo_in):
         BEV_features_sum = 0
         FRO_features_sum = 0

@@ -67,13 +67,13 @@ class KarrDataset(Dataset):
             for i in range(0, self.seq_len):
                 raw_pcd = cast(h5py.Dataset, raw_pcd_group[str(i)])[:]
 
-                lidar_start_time = time.time()
+                lidar_start_time = time.perf_counter()
                 ptseg = lidar_pipeline.segment(raw_pcd)
                 ptx = raw_pcd[:, 1] * -1
                 pty = raw_pcd[:, 2]
                 ptz = raw_pcd[:, 0]
                 bev_seg, bev_dep, front_seg, front_dep, _, _ = gen_bev_front_rear_seg_dep_numpy(ptx, pty, ptz, ptseg, cfg=self.config)
-                lidar_elapsed_time += time.time() - lidar_start_time
+                lidar_elapsed_time += time.perf_counter() - lidar_start_time
 
                 data['bev_segs'].append(bev_seg[0])
                 data['bev_deps'].append(bev_dep[0])

@@ -13,17 +13,9 @@ import jetson_deployment_test as jdt
 from jetson_deployment_test import _read_gpu_id, _select_logdir
 
 
-class TensorRTModel:
-    INPUT_NAMES = (
-        "bev_segs",
-        "bev_deps",
-        "front_segs",
-        "front_deps",
-        "rp1",
-        "rp2",
-        "velocity",
-    )
-    OUTPUT_NAME = "pred_wp"
+class TensorRTEngineBase:
+    INPUT_NAMES: tuple[str, ...] = ()
+    OUTPUT_NAME: str = ""
 
     def __init__(self, engine_path: Path, config: Any):
         import tensorrt as trt
@@ -139,20 +131,8 @@ class TensorRTModel:
     def eval(self):
         return self
 
-    def __call__(self, bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, velo):
-        return self.forward(bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, velo)
-
-    def forward(self, bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, velo):
+    def _run(self, inputs: dict[str, Any]):
         torch = self._torch
-        inputs = {
-            "bev_segs": torch.stack(bev_segs, dim=1),
-            "bev_deps": torch.stack(bev_deps, dim=1),
-            "front_segs": torch.stack(front_segs, dim=1),
-            "front_deps": torch.stack(front_deps, dim=1),
-            "rp1": rp1,
-            "rp2": rp2,
-            "velocity": velo,
-        }
 
         for name, buffer in self.input_buffers.items():
             source = inputs.get(name)
@@ -182,6 +162,46 @@ class TensorRTModel:
         if success is False:
             raise RuntimeError("TensorRT execution failed")
         return self.output_buffers[self.OUTPUT_NAME]
+
+
+class TensorRTModel(TensorRTEngineBase):
+    INPUT_NAMES = (
+        "bev_segs",
+        "bev_deps",
+        "front_segs",
+        "front_deps",
+        "rp1",
+        "rp2",
+        "velocity",
+    )
+    OUTPUT_NAME = "pred_wp"
+
+    def __call__(self, bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, velo):
+        return self.forward(bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, velo)
+
+    def forward(self, bev_segs, bev_deps, front_segs, front_deps, rp1, rp2, velo):
+        torch = self._torch
+        inputs = {
+            "bev_segs": torch.stack(bev_segs, dim=1),
+            "bev_deps": torch.stack(bev_deps, dim=1),
+            "front_segs": torch.stack(front_segs, dim=1),
+            "front_deps": torch.stack(front_deps, dim=1),
+            "rp1": rp1,
+            "rp2": rp2,
+            "velocity": velo,
+        }
+        return self._run(inputs)
+
+
+class TensorRTBEVModel(TensorRTEngineBase):
+    INPUT_NAMES = ("out_data",)
+    OUTPUT_NAME = "logits"
+
+    def __call__(self, out_data):
+        return self.forward(out_data)
+
+    def forward(self, out_data):
+        return self._run({"out_data": out_data})
 
 
 def _load_log_config(config_path: Path):
@@ -226,12 +246,47 @@ def _find_engine(logdir: Path, explicit: Path | None) -> Path:
     )
 
 
+def _find_polarseg_engine(pth: Path, explicit: Path | None) -> Path:
+    if explicit is not None:
+        engine_path = explicit.expanduser().resolve()
+        if not engine_path.is_file():
+            raise SystemExit(f"PolarSeg TensorRT engine not found: {engine_path}")
+        return engine_path
+
+    parent = pth.parent
+    stem = pth.stem
+    for candidate in (
+        parent / f"{stem}_bev_fp16.engine",
+        parent / f"{stem}_bev_fp32.engine",
+        parent / f"{stem}_bev.engine",
+    ):
+        if candidate.is_file():
+            return candidate
+
+    for pattern in (f"{stem}_bev*.engine", "*_bev*.engine", "*.engine"):
+        engines = sorted(parent.glob(pattern)) if parent.is_dir() else []
+        if len(engines) == 1:
+            return engines[0]
+        if len(engines) > 1:
+            candidates = ", ".join(str(path) for path in engines)
+            raise SystemExit(
+                f"Multiple PolarSeg engines found under {parent}: {candidates}. "
+                "Select one with --polarseg-engine PATH."
+            )
+
+    raise SystemExit(
+        f"No PolarSeg BEV engine found under {parent}. Build one with: "
+        f"python postprocess_polarseg_compile.py --pth {pth} --mode tensorrt"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="TensorRT benchmarking in Jetson board")
     parser.add_argument("--route", action='append', type=str, help='set routes, you can combine multiple routes. e.g: --route "a" --route "b" ...')
     parser.add_argument("--warmup", type=int, default=3, help='number of warm-up batches excluded from summary stats (default: 3)')
     parser.add_argument("--mode", choices=["model", "pipeline", "both"], default="both", help='benchmark scope: model only, pipeline (PolarSeg+projection+model), or both (default: both)')
     parser.add_argument("--engine", type=Path, default=None, help="TensorRT engine path. Auto-detected under <logdir>/compiled if omitted.")
+    parser.add_argument("--polarseg-engine", type=Path, default=None, help="PolarSeg BEV TensorRT engine path. Auto-detected beside the PolarSeg pth if omitted.")
     args = parser.parse_args()
 
     logdir = _select_logdir()
@@ -248,6 +303,7 @@ def main():
     import torch.nn.functional as F
     from torch.utils.data import DataLoader
     from jetson_deployment_dataloader import KarrDataset
+    from preprocess_lidar import GenerateLidSegDep
 
     try:
         import tensorrt as trt
@@ -277,17 +333,67 @@ def main():
         config.select_route = args.route
     print("Selected route: ", config.select_route)
 
+    class TensorRTBEVModule(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            self.model = model
+
+        def forward(self, out_data):
+            return self.model(out_data)
+
+    class TensorRTLidSegDep(GenerateLidSegDep):
+        def __init__(self, config, bev_engine_path):
+            self._bev_engine_path = bev_engine_path
+            super().__init__(config)
+
+        def _init_model(self):
+            model = super()._init_model()
+            model.BEV_model = TensorRTBEVModule(
+                TensorRTBEVModel(self._bev_engine_path, self.config)
+            )
+            return model
+
+    class KarrDatasetTensorRT(KarrDataset):
+        def __init__(self, config, bev_engine_path, **kwargs):
+            self._bev_engine_path = bev_engine_path
+            super().__init__(config=config, **kwargs)
+
+        def _get_lidar_pipeline(self):
+            if not hasattr(self, "_lidar_pipeline"):
+                self._lidar_pipeline = TensorRTLidSegDep(
+                    self.config, self._bev_engine_path
+                )
+            return self._lidar_pipeline
+
+    modes = ["model", "pipeline"] if args.mode == "both" else [args.mode]
+    needs_polarseg = "pipeline" in modes
+
     engine_path = _find_engine(config.logdir, args.engine)
     print("TensorRT version: ", getattr(trt, "__version__", "unknown"))
     print("TensorRT engine: ", engine_path)
     model = TensorRTModel(engine_path, config)
 
-    modes = ["model", "pipeline"] if args.mode == "both" else [args.mode]
+    polarseg_engine_path = None
+    if needs_polarseg:
+        polarseg_engine_path = _find_polarseg_engine(
+            Path(config.polarseg_weight_path), args.polarseg_engine
+        )
+        print("PolarSeg TensorRT engine: ", polarseg_engine_path)
 
     for mode in modes:
-        test_lidar_from_scratch = (mode == "pipeline")
-
-        karr_dataset = KarrDataset(config=config, phase="test", test_lidar_from_scratch=test_lidar_from_scratch)
+        if mode == "pipeline":
+            karr_dataset = KarrDatasetTensorRT(
+                config=config,
+                bev_engine_path=polarseg_engine_path,
+                phase="test",
+                test_lidar_from_scratch=True,
+            )
+        else:
+            karr_dataset = KarrDataset(
+                config=config,
+                phase="test",
+                test_lidar_from_scratch=False,
+            )
 
         dataloader_test = DataLoader(karr_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
 

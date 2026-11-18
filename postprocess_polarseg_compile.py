@@ -141,7 +141,8 @@ def parse_args():
         "--precision",
         choices=["fp16", "fp32"],
         default="fp16",
-        help="TensorRT engine precision (default: fp16).",
+        help="TensorRT engine precision (default: fp16). TensorRT 11+ FP16 "
+        "uses NVIDIA ModelOpt AutoCast.",
     )
     parser.add_argument(
         "--workspace-mb",
@@ -163,7 +164,20 @@ def parse_args():
     parser.add_argument(
         "--trt-args",
         default="",
-        help="Additional trtexec arguments, e.g. --trt-args='--useCudaGraph'.",
+        help="Additional trtexec arguments, e.g. --trt-args='--useCudaGraph'. "
+        "Do not pass removed precision flags on TensorRT 11+.",
+    )
+    parser.add_argument(
+        "--autocast-args",
+        default="",
+        help="Additional NVIDIA ModelOpt AutoCast arguments, e.g. "
+        "--autocast-args='--calibration_data calib.npz --data_max 256'.",
+    )
+    parser.add_argument(
+        "--no-autocast",
+        action="store_true",
+        help="Skip ModelOpt AutoCast for FP16. Useful when the ONNX is already "
+        "FP16 or was converted elsewhere.",
     )
     parser.add_argument(
         "--skip-power-setup",

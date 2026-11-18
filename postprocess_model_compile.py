@@ -352,10 +352,109 @@ def get_trtexec_major_version(trtexec: str):
     except Exception:
         return None
 
-    match = re.search(r"TensorRT(?:\s+version)?\s*:?\s*v?(\d+)", result.stdout, re.IGNORECASE)
+    output = f"{result.stdout}\n{result.stderr}"
+    match = re.search(
+        r"TensorRT(?:\s+version)?[\s:-]*v?(\d+)", output, re.IGNORECASE
+    )
+    if match:
+        return int(match.group(1))
+
+    match = re.search(r"\bv?(\d+)\.\d+(?:\.\d+)?\b", output)
     if match:
         return int(match.group(1))
     return None
+
+
+def trtexec_has_fp16_flag(trtexec: str):
+    try:
+        result = subprocess.run(
+            [trtexec, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except Exception:
+        return None
+
+    output = f"{result.stdout}\n{result.stderr}"
+    if re.search(r"(?<![\w-])--fp16(?![\w-])", output):
+        return True
+    if "--onnx" in output or "--saveEngine" in output:
+        return False
+    return None
+
+
+def trtexec_requires_modelopt_fp16(trtexec: str) -> bool:
+    has_fp16 = trtexec_has_fp16_flag(trtexec)
+    if has_fp16 is not None:
+        return not has_fp16
+
+    major = get_trtexec_major_version(trtexec)
+    if major is not None:
+        return major >= 11
+
+    raise SystemExit(
+        "Could not determine whether trtexec supports --fp16. "
+        "Pass --trtexec /path/to/trtexec explicitly."
+    )
+
+
+def onnx_inputs_are_fp16(onnx_path: Path) -> bool:
+    import onnx
+
+    onnx_model = onnx.load(str(onnx_path), load_external_data=False)
+    input_types = {
+        inp.type.tensor_type.elem_type
+        for inp in onnx_model.graph.input
+        if inp.type.HasField("tensor_type")
+    }
+    return bool(input_types) and input_types == {onnx.TensorProto.FLOAT16}
+
+
+def autocast_onnx_fp16(onnx_path: Path, output_path: Path, args) -> Path:
+    if onnx_inputs_are_fp16(onnx_path):
+        print(f"ONNX inputs are already FP16; skipping ModelOpt AutoCast: {onnx_path}")
+        return onnx_path
+
+    command = [
+        sys.executable,
+        "-m",
+        "modelopt.onnx.autocast",
+        "--onnx_path",
+        str(onnx_path),
+        "--output_path",
+        str(output_path),
+        "--low_precision_type",
+        "fp16",
+    ]
+    if getattr(args, "verbose", False):
+        command.extend(["--log_level", "DEBUG"])
+    if getattr(args, "autocast_args", ""):
+        command.extend(shlex.split(args.autocast_args))
+
+    print(f"Converting ONNX to mixed FP16 with NVIDIA ModelOpt AutoCast: {onnx_path}")
+    print(f"Running: {' '.join(command)}")
+    try:
+        subprocess.run(command, check=True)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"Failed to run ModelOpt: {exc}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(
+            f"ModelOpt AutoCast failed with exit code {exc.returncode}.\n"
+            'Install ModelOpt with: pip install -U "nvidia-modelopt[onnx]"\n'
+            "If your environment pins PyTorch/ONNX Runtime, use a compatible "
+            "ModelOpt version or convert the ONNX on another machine and pass --no-autocast."
+        ) from exc
+
+    if not output_path.is_file() or output_path.stat().st_size == 0:
+        raise SystemExit(f"ModelOpt AutoCast did not create: {output_path}")
+
+    import onnx
+
+    onnx.checker.check_model(onnx.load(str(output_path)))
+    print(f"FP16 ONNX: {output_path}")
+    return output_path
 
 
 def build_engine(onnx_path: Path, engine_path: Path, args):
@@ -364,13 +463,33 @@ def build_engine(onnx_path: Path, engine_path: Path, args):
     if not args.skip_power_setup:
         setup_max_performance()
 
+    no_autocast = getattr(args, "no_autocast", False)
+    fp16_requires_modelopt = (
+        args.precision == "fp16" and trtexec_requires_modelopt_fp16(trtexec)
+    )
+    use_modelopt = fp16_requires_modelopt and not no_autocast
+
+    build_onnx = onnx_path
+    if use_modelopt:
+        build_onnx = autocast_onnx_fp16(
+            onnx_path,
+            engine_path.parent / f"{onnx_path.stem}_autocast_fp16.onnx",
+            args,
+        )
+    elif fp16_requires_modelopt and no_autocast:
+        print(
+            "Warning: --no-autocast is set with a TensorRT version that no longer "
+            "supports --fp16; building the ONNX as-is. Ensure the ONNX was already "
+            "converted to FP16."
+        )
+
     command = [
         trtexec,
-        f"--onnx={onnx_path}",
+        f"--onnx={build_onnx}",
         f"--saveEngine={engine_path}",
     ]
 
-    if args.precision == "fp16":
+    if args.precision == "fp16" and not fp16_requires_modelopt:
         command.append("--fp16")
 
     if args.workspace_mb > 0:
@@ -449,7 +568,8 @@ def parse_args():
         "--precision",
         choices=["fp16", "fp32"],
         default="fp16",
-        help="TensorRT engine precision (default: fp16).",
+        help="TensorRT engine precision (default: fp16). TensorRT 11+ FP16 "
+        "uses NVIDIA ModelOpt AutoCast.",
     )
     parser.add_argument(
         "--workspace-mb",
@@ -465,7 +585,20 @@ def parse_args():
     parser.add_argument(
         "--trt-args",
         default="",
-        help="Additional trtexec arguments, e.g. --trt-args='--useCudaGraph'.",
+        help="Additional trtexec arguments, e.g. --trt-args='--useCudaGraph'. "
+        "Do not pass removed precision flags on TensorRT 11+.",
+    )
+    parser.add_argument(
+        "--autocast-args",
+        default="",
+        help="Additional NVIDIA ModelOpt AutoCast arguments, e.g. "
+        "--autocast-args='--calibration_data calib.npz --data_max 256'.",
+    )
+    parser.add_argument(
+        "--no-autocast",
+        action="store_true",
+        help="Skip ModelOpt AutoCast for FP16. Useful when the ONNX is already "
+        "FP16 or was converted elsewhere.",
     )
     parser.add_argument(
         "--onnx-path",

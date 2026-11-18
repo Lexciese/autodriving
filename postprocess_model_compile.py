@@ -108,23 +108,61 @@ def check_conda_env():
         )
 
 
+def _package_version(name: str) -> str:
+    try:
+        from importlib.metadata import version
+
+        return version(name)
+    except Exception:
+        return "unknown"
+
+
+def check_onnxruntime_compat():
+    try:
+        import onnxruntime  # noqa: F401
+    except Exception as exc:
+        details = " ".join(
+            str(item) for item in (exc, exc.__cause__, exc.__context__) if item
+        )
+        if "_ARRAY_API" in details or "NumPy 1.x" in details:
+            raise SystemExit(
+                "onnxruntime cannot run with the installed NumPy.\n"
+                f"  numpy: {_package_version('numpy')}\n"
+                f"  onnxruntime: {_package_version('onnxruntime')}\n"
+                "Fix one of:\n"
+                f'  "{sys.executable}" -m pip install "numpy<2"\n'
+                f'  "{sys.executable}" -m pip install -U onnxruntime onnxsim\n'
+                "Then verify with:\n"
+                f'  "{sys.executable}" -c "import numpy, onnxruntime, onnxsim; '
+                'print(numpy.__version__, onnxruntime.__version__)"'
+            ) from exc
+        raise SystemExit(
+            f"onnxruntime failed to import: {type(exc).__name__}: {exc}\n"
+            f'Install with: "{sys.executable}" -m pip install onnxruntime'
+        ) from exc
+
+
 def preflight(args):
     required = [("onnx", "onnx")]
     if not args.no_simplify:
+        check_onnxruntime_compat()
         required.append(("onnxsim", "onnxsim"))
 
-    missing = []
+    failures = []
     for module_name, package_name in required:
         try:
             importlib.import_module(module_name)
-        except ImportError:
-            missing.append(package_name)
+        except Exception as exc:
+            failures.append((package_name, exc))
 
-    if missing:
-        raise SystemExit(
-            f"Missing Python package(s): {', '.join(missing)}\n"
-            f"Install with: conda run -n dl pip install {' '.join(missing)}"
-        )
+    if failures:
+        lines = [
+            f"{package_name} failed to import: {type(exc).__name__}: {exc}"
+            for package_name, exc in failures
+        ]
+        packages = " ".join(package_name for package_name, _ in failures)
+        lines.append(f'Install with: "{sys.executable}" -m pip install {packages}')
+        raise SystemExit("\n".join(lines))
 
 
 def load_run_config(logdir: Path):
@@ -416,6 +454,8 @@ def autocast_onnx_fp16(onnx_path: Path, output_path: Path, args) -> Path:
     if onnx_inputs_are_fp16(onnx_path):
         print(f"ONNX inputs are already FP16; skipping ModelOpt AutoCast: {onnx_path}")
         return onnx_path
+
+    check_onnxruntime_compat()
 
     command = [
         sys.executable,

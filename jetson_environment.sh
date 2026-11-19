@@ -50,7 +50,7 @@ export FORCE_CUDA="1"
 echo "=== 6. Installing NVIDIA PyTorch & NumPy Pin ==="
 # NVIDIA documentation requires NumPy < 2.0.0 (e.g. 1.26.1) for binary compatibility
 pip install "numpy<2.0.0"
-EXPECTED_TORCH_VERSION="2.5.0a0+872d972e41.nv24.08.17622132"
+EXPECTED_TORCH_VERSION="2.5.0a0+872d972e41.nv24.08"
 
 if python -c "import torch; assert torch.__version__ == '${EXPECTED_TORCH_VERSION}' and torch.cuda.is_available()" 2>/dev/null; then
     echo "NVIDIA PyTorch ${EXPECTED_TORCH_VERSION} with CUDA is already installed. Skipping download..."

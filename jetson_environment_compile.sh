@@ -14,13 +14,12 @@ if conda env list | grep -q "^${TARGET_ENV} "; then
 fi
 conda create -n "${TARGET_ENV}" --clone "${SOURCE_ENV}" -y
 
-echo "=== 2. Activating '${TARGET_ENV}' & Persisting NumPy < 2 Lock ==="
+echo "=== 2. Activating '${TARGET_ENV}' & Enforcing NumPy < 2 ==="
 conda activate "${TARGET_ENV}"
 
 CONSTRAINT_FILE="${CONDA_PREFIX}/numpy-constraint.txt"
 echo "numpy<2.0.0" > "${CONSTRAINT_FILE}"
 
-# Persist PIP_CONSTRAINT on every `conda activate compile` so future pip installs cannot upgrade NumPy
 mkdir -p "${CONDA_PREFIX}/etc/conda/activate.d" "${CONDA_PREFIX}/etc/conda/deactivate.d"
 cat <<EOF > "${CONDA_PREFIX}/etc/conda/activate.d/numpy_pin.sh"
 export PIP_CONSTRAINT="${CONSTRAINT_FILE}"
@@ -31,13 +30,10 @@ EOF
 
 export PIP_CONSTRAINT="${CONSTRAINT_FILE}"
 
-echo "=== 3. Installing ONNX Export Dependencies ==="
+echo "=== 3. Downgrading NumPy & Installing ONNX Export Dependencies ==="
+# Force downgrade if cloned env already had NumPy 2.x
+pip install --no-cache-dir --force-reinstall "numpy<2.0.0"
 pip install --no-cache-dir "onnx<1.18" "onnxruntime<1.20"
-
-# Optional: onnxsim often compiles C++ from source on aarch64; keep non-fatal
-sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
-CMAKE_ARGS="-DONNXSIM_BUILTIN_ORT=OFF" pip install --no-build-isolation --no-cache-dir onnxsim || \
-    echo "Warning: onnxsim failed to build on aarch64. Use --no-simplify with compile.py."
 
 echo "=== 4. Verification ==="
 python -c "

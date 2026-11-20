@@ -11,6 +11,62 @@ from config import GlobalConfig
 configx = GlobalConfig()
 
 from preprocess_util import euler_from_quaternion, latlon_to_yaw, quaternion_to_yaw
+from transforms import antenna_to_base_latlon, yaw_from_quaternion_xyzw
+
+LAT_M_PER_DEG = 40008000.0 / 360.0
+LON_M_PER_DEG = 40075000.0 / 360.0
+
+
+def extract_route_points(lats, lons, gap_distance):
+    """Return first/last/route points using the same rule as the raw track."""
+    if len(lats) == 0:
+        return {
+            'first_point': {'latitude': None, 'longitude': None},
+            'last_point': {'latitude': None, 'longitude': None},
+            'route_point': {'latitude': [], 'longitude': []},
+        }
+    routes = {
+        'first_point': {'latitude': lats[0], 'longitude': lons[0]},
+        'last_point': {'latitude': lats[-1], 'longitude': lons[-1]},
+        'route_point': {'latitude': [], 'longitude': []},
+    }
+    prev_lat, prev_lon = lats[0], lons[0]
+    for lat, lon in zip(lats, lons):
+        d_lat_m = (lat - prev_lat) * LAT_M_PER_DEG
+        d_lon_m = (lon - prev_lon) * LON_M_PER_DEG * np.cos(np.radians(lat))
+        if np.sqrt(d_lat_m ** 2 + d_lon_m ** 2) >= gap_distance:
+            routes['route_point']['latitude'].append(lat)
+            routes['route_point']['longitude'].append(lon)
+            prev_lat, prev_lon = lat, lon
+    return routes
+
+
+def gnss_track_to_base(meta, configx):
+    """Apply the GNSS antenna -> base lever arm to a whole route track.
+
+    The offset is expressed as [forward, left] in the base frame.  If the
+    offset is zero (or disabled) this is an identity copy.
+    """
+    lats = [m['global_position_latlon'][0] for m in meta]
+    lons = [m['global_position_latlon'][1] for m in meta]
+    if not getattr(configx, 'enable_gnss_lever_arm', True):
+        return lats, lons
+    offset = np.asarray(getattr(configx, 'gnss_ant_offset_base', [0.0, 0.0, 0.0]), dtype=float)
+    if np.allclose(offset[:2], 0.0):
+        return lats, lons
+
+    lat0, lon0 = lats[0], lons[0]
+    base_lats, base_lons = [], []
+    for m, lat, lon in zip(meta, lats, lons):
+        quat = m.get('local_orientation_xyzw')
+        yaw = yaw_from_quaternion_xyzw(quat) if quat is not None else 0.0
+        b_lat, b_lon = antenna_to_base_latlon(
+            lat, lon, yaw, offset[:2], lat0=lat0, lon0=lon0
+        )
+        base_lats.append(float(b_lat))
+        base_lons.append(float(b_lon))
+    return base_lats, base_lons
+
 
 def is_valid_meta(m):
     if not isinstance(m, dict) or not m:
@@ -67,7 +123,12 @@ for route in configx.select_route:
     raw_lons = [m['global_position_latlon'][1] for m in meta]
     filtered_lats, filtered_lons = clean_gnss_coordinates(raw_lats, raw_lons)
 
-    # Update metadata with cleaned coordinates
+    # Base-frame track: antenna -> base lever arm (ZED odom base origin).
+    base_raw_lats, base_raw_lons = gnss_track_to_base(meta, configx)
+    base_lats, base_lons = clean_gnss_coordinates(base_raw_lats, base_raw_lons)
+    routes_base = extract_route_points(base_lats, base_lons, configx.route_gap_distance)
+
+    # Update metadata with cleaned coordinates (raw frame, kept for compatibility)
     for idx, m in enumerate(meta):
         m['global_position_latlon'] = [filtered_lats[idx], filtered_lons[idx]]
 
@@ -227,6 +288,21 @@ for route in configx.select_route:
     gnss_df = pd.DataFrame({'timestamp': timestamps, 'latitude': filtered_lats, 'longitude': filtered_lons})
     gnss_df.to_csv(gnss_path, index=False)
     print(f"saved to {gnss_path}")
+
+    # Base-frame artifacts (raw meta and raw route points are left untouched).
+    routepoint_base_path = route_path / configx.routepoint_base_template.format(route=route)
+    with open(routepoint_base_path, 'w') as c:
+        yaml.dump(routes_base, c)
+    print(f"saved to {routepoint_base_path}")
+
+    gnss_base_path = route_path / configx.route_gnss_base_filename
+    gnss_base_df = pd.DataFrame({
+        'timestamp': timestamps,
+        'latitude': base_lats,
+        'longitude': base_lons,
+    })
+    gnss_base_df.to_csv(gnss_base_path, index=False)
+    print(f"saved to {gnss_base_path}")
 
     plt.grid(linestyle='--')
     plt.gca().set_aspect('equal', adjustable='box')

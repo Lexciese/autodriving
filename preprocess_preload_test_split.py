@@ -84,7 +84,9 @@ class SplitDataset:
 
         for route in self.config.select_route:
             route_path = self.config.datadir / route
-            preload_test_hdf5_path = route_path / f"preload_test_split_seq{self.config.seq_len}_pred{self.config.pred_len}.hdf5"
+            preload_test_hdf5_path = route_path / self.config.test_preload_name_template.format(
+                seq=self.config.seq_len, pred=self.config.pred_len
+            )
 
             if preload_test_hdf5_path.exists():
                 with h5py.File(preload_test_hdf5_path, "r", locking=False) as existing_hdf5:

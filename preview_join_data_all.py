@@ -8,6 +8,7 @@ import pandas as pd
 
 from preprocess_util import hampel_filter, bearing_filter, resizecrop_matrix, transform_2d_points, plot_lidbev_rpwp, plot_lidfront_rpwp, plot_sdc_rpwp, magneto_to_yaw, latlon_to_yaw, compute_imu_yaw, euler_from_quaternion
 from preprocess_util import PIDController, pid_control
+from transforms import apply_alignment, latlon_to_enu, load_alignment, rp_odom_to_local
 
 from collections import deque
 
@@ -51,11 +52,24 @@ for route in route_list:
         print(f"{join_img_folder} is already generated")
         continue
 
-    # Load route points
-    with open(route_path / f"{route}_routepoint_list.yml", 'r') as rp_listx:
+    # Load route points (base frame if available) and the route alignment.
+    routepoint_base = route_path / configx.routepoint_base_template.format(route=route)
+    routepoint_source = routepoint_base if routepoint_base.exists() else route_path / f"{route}_routepoint_list.yml"
+    with open(routepoint_source, 'r') as rp_listx:
         rp_list = yaml.safe_load(rp_listx)
         rp_list['route_point']['latitude'].append(rp_list['last_point']['latitude'])
         rp_list['route_point']['longitude'].append(rp_list['last_point']['longitude'])
+
+    align = load_alignment(route_path / configx.align_gnss_odom_filename)
+    anchor_lat, anchor_lon = (float(x) for x in align["anchor_latlon"])
+
+    gnss_base_path = route_path / configx.route_gnss_base_filename
+    gnss_source = gnss_base_path if gnss_base_path.exists() else route_path / f"{route}_gnss.csv"
+    gnss_df = pd.read_csv(gnss_source, dtype={'timestamp': str})
+    gnss_lookup = {
+        str(ts): (float(lat), float(lon))
+        for ts, lat, lon in zip(gnss_df['timestamp'], gnss_df['latitude'], gnss_df['longitude'])
+    }
 
     file_list = sorted(p.name for p in ddir_meta.iterdir())
 
@@ -75,14 +89,20 @@ for route in route_list:
             curr_meta = yaml.safe_load(curr_metafile)
         velocity = np.abs(curr_meta["velocity"])
 
-        veh_curr_lat = curr_meta['global_position_latlon'][0]
-        veh_curr_lon = curr_meta['global_position_latlon'][1]
+        if filenum in gnss_lookup:
+            veh_curr_lat, veh_curr_lon = gnss_lookup[filenum]
+        else:
+            veh_curr_lat = curr_meta['global_position_latlon'][0]
+            veh_curr_lon = curr_meta['global_position_latlon'][1]
 
         prev_idx = max(0, current_idx - configx.gap_bearing)
         with open(ddir_meta / file_list[prev_idx], 'r') as prev_metafile:
             prev_meta = yaml.safe_load(prev_metafile)
-        veh_prev_lat = prev_meta['global_position_latlon'][0]
-        veh_prev_lon = prev_meta['global_position_latlon'][1]
+        if file_list[prev_idx][:-4] in gnss_lookup:
+            veh_prev_lat, veh_prev_lon = gnss_lookup[file_list[prev_idx][:-4]]
+        else:
+            veh_prev_lat = prev_meta['global_position_latlon'][0]
+            veh_prev_lon = prev_meta['global_position_latlon'][1]
         
         # raw_curr_lat = curr_meta['global_position_latlon'][0]
         # raw_curr_lon = curr_meta['global_position_latlon'][1]
@@ -140,12 +160,20 @@ for route in route_list:
         velocity_ms = curr_meta['velocity']
         velocity_kmh = velocity_ms * 3.6
 
-        # Compute global to local transformation
+        # Waypoint/rp frame: ZED odom (same convention as the dataloader).
+        _, _, local_veh_heading = euler_from_quaternion(
+            w=curr_meta['local_orientation_xyzw'][3],
+            x=curr_meta['local_orientation_xyzw'][0],
+            y=curr_meta['local_orientation_xyzw'][1],
+            z=curr_meta['local_orientation_xyzw'][2],
+            rad=True
+        )
+        ego_local_x = curr_meta['local_position_xyz'][0]
+        ego_local_y = curr_meta['local_position_xyz'][1]
+
         rp_sdc_frame = []
         rp_lidbev_frame = []
         rp_lidfront_frame = []
-        R_matrix = np.array([[np.cos(bearing_veh), -np.sin(bearing_veh)],
-                            [np.sin(bearing_veh),  np.cos(bearing_veh)]])
         about_to_finish = False
 
         for j in range(2):
@@ -165,10 +193,12 @@ for route in route_list:
 
                 next_lat = rp_list['route_point']['latitude'][j]
                 next_lon = rp_list['route_point']['longitude'][j]
-                dLat_m = (next_lat - veh_curr_lat) * 40008000 / 360
-                dLon_m = (next_lon - veh_curr_lon) * 40075000 * np.cos(np.radians(veh_curr_lat)) / 360
 
-            nextr_local_point = R_matrix.T.dot(np.array([dLon_m, dLat_m]))
+            east, north = latlon_to_enu(next_lat, next_lon, anchor_lat, anchor_lon)
+            rp_x, rp_y = apply_alignment(east, north, align)
+            nextr_local_point = np.array(
+                rp_odom_to_local(rp_x, rp_y, ego_local_x, ego_local_y, local_veh_heading)
+            )
 
             nextr_x_frame, nextr_y_frame = plot_sdc_rpwp(configx, nextr_local_point[0], nextr_local_point[1])
             rp_sdc_frame.append(np.array([nextr_x_frame, nextr_y_frame]))
@@ -178,15 +208,6 @@ for route in route_list:
 
             nextr_x_frame, nextr_y_frame = plot_lidfront_rpwp(configx, nextr_local_point[0], nextr_local_point[1])
             rp_lidfront_frame.append(np.array([nextr_x_frame, nextr_y_frame]))
-
-        # Waypoint computation based on future_idx sampling logic from dataloader
-        _, _, local_veh_heading = euler_from_quaternion(
-            w=curr_meta['local_orientation_xyzw'][3],
-            x=curr_meta['local_orientation_xyzw'][0],
-            y=curr_meta['local_orientation_xyzw'][1],
-            z=curr_meta['local_orientation_xyzw'][2],
-            rad=True
-        )
 
         wp_local = []
         wp_sdc_frame = []
@@ -276,6 +297,7 @@ for route in route_list:
             (f"File Name: {filenum}.yml", ""),
             (f"Speed: {format(np.round(velocity_kmh, 3), '.3f')} km/h", ""),
             (f"Bearing: {format(np.round(bearing_veh_deg, 3), '.3f')} ({bearing_est})", ""),
+            (f"ZED Bearing: {format(np.round(np.degrees(local_veh_heading), 3), '.3f')}", ""),
             (f"Latlon Bearing: {format(np.round(np.degrees(latlon_bearing), 3), '.3f')}", ""),
             (f"Raw IMU Bearing: {format(np.round(np.degrees(raw_imu_bearing), 3), '.3f')}", ""),
             (f"Calibrated Mag Bearing: {format(np.round(np.degrees(raw_magnetometer_bearing), 3), '.3f')}", ""),

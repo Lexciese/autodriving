@@ -400,7 +400,8 @@ def plot_lidbev_rpwp(configx: GlobalConfig, local_bev_x, local_bev_y):
 
 #baca: https://github.com/collector-m/lidar_projection/blob/master/show.py
 def plot_lidfront_rpwp(configx: GlobalConfig, local_bev_x, local_bev_y):
-    y_road = configx.lid_cover_area_bt[0] #-1.5 #ketinggian jalan dari perspektif posisi LiDAR, dalam meter
+    # Ground height in the same projection/base frame used by the LiDAR points.
+    y_road = getattr(configx, "ground_z_base", configx.lid_cover_area_bt[0])
     xy_euclid = np.sqrt(local_bev_x**2 + local_bev_y**2)
 
     # PROJECT INTO IMAGE COORDINATES

@@ -14,6 +14,7 @@ from pypcd4.pointcloud2 import sensor_msgs__msg__PointCloud2
 from common.polarseg.network.BEV_Unet import BEV_Unet
 from common.polarseg.network.ptBEV import ptBEVnet
 from preprocess_util import colorize_seg, colorize_logdepth
+from transforms import cfg, lidar_raw_to_proj_tensor
 
 from config import GlobalConfig
 
@@ -410,10 +411,8 @@ class GenerateLidSegDep:
             logits = self.model([pt_fea], [grid_ind[:, :2]])
             ptseg = torch.argmax(logits, 1)[0, grid_ind[:, 0], grid_ind[:, 1], grid_ind[:, 2]] + 1
             
-            # Coordinate re-mapping based on sensor orientation
-            coords = pcd_tensor[:, :3]
-            if self.config.lidar_sensor == "rs32":
-                coords = torch.stack([-coords[:, 1], coords[:, 2], coords[:, 0]], dim=1)
+            # Raw LiDAR -> projection frame (legacy remap + measured base offset).
+            coords = lidar_raw_to_proj_tensor(pcd_tensor[:, :3], cfg(self.config, "T_lidar_proj"))
 
             bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep = gen_bev_front_rear_seg_dep_tensor(coords[:, 0], coords[:, 1], coords[:, 2], ptseg, self.config)
             colorized = colorize_projections(bev_seg, bev_dep, front_seg, front_dep, rear_seg, rear_dep, self.config.SEG_CLASSES['colors'])
@@ -450,18 +449,25 @@ def main():
         for d in target_dirs.values():
             d.mkdir(parents=True, exist_ok=True)
 
+        version_path = route_path / "lidar" / "img" / "frame_version.txt"
+        cache_current = version_path.exists() and version_path.read_text().strip() == str(config.frame_version)
+        if not cache_current:
+            print(f"[{route}] frame version changed -> regenerating lidar projections")
+
         meta_files = sorted(dir_meta.glob("*.yml"))
         
         for meta_file in tqdm(meta_files, desc="Processing PCD Files", unit="file"):
             stem = meta_file.stem
             file_paths = {k: v / f"{stem}.png" if k != 'seg' else v / f"{stem}.npy" for k, v in target_dirs.items()}
 
-            if all(p.exists() for p in file_paths.values()):
+            if cache_current and all(p.exists() for p in file_paths.values()):
                 continue
 
             pcd_file = dir_lidar / f"{stem}.pcd"
             predict_labels, colorized_imgs = pipeline.run(pcd_file)
             save_outputs(file_paths, predict_labels, colorized_imgs)
+
+        version_path.write_text(str(config.frame_version))
 
 if __name__ == "__main__":
     main()

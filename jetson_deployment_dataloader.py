@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 
 from config import GlobalConfig
 from preprocess_lidar import GenerateLidSegDep, gen_bev_front_rear_seg_dep_numpy
+from transforms import cfg, lidar_raw_to_proj_numpy
 
 
 class KarrDataset(Dataset):
@@ -20,7 +21,9 @@ class KarrDataset(Dataset):
         self.index_map = []
         for route in self.config.select_route:
             route_path = self.config.datadir / route
-            preload_test_hdf5_path = route_path / f"preload_test_split_seq{self.config.seq_len}_pred{self.config.pred_len}.hdf5"
+            preload_test_hdf5_path = route_path / cfg(self.config, "test_preload_name_template").format(
+                seq=self.config.seq_len, pred=self.config.pred_len
+            )
 
             with h5py.File(preload_test_hdf5_path, "r", locking=False) as preload_test_hdf5:
                 keys = sorted(preload_test_hdf5.keys(), key=int)
@@ -69,9 +72,8 @@ class KarrDataset(Dataset):
 
                 lidar_start_time = time.perf_counter()
                 ptseg = lidar_pipeline.segment(raw_pcd)
-                ptx = raw_pcd[:, 1] * -1
-                pty = raw_pcd[:, 2]
-                ptz = raw_pcd[:, 0]
+                proj = lidar_raw_to_proj_numpy(raw_pcd[:, :3], cfg(self.config, "T_lidar_proj"))
+                ptx, pty, ptz = proj[:, 0], proj[:, 1], proj[:, 2]
                 bev_seg, bev_dep, front_seg, front_dep, _, _ = gen_bev_front_rear_seg_dep_numpy(ptx, pty, ptz, ptseg, cfg=self.config)
                 lidar_elapsed_time += time.perf_counter() - lidar_start_time
 

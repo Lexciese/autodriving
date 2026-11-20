@@ -125,6 +125,42 @@ class GlobalConfig:
     v_res_rad = v_res * (np.pi/180)
     h_res_rad = h_res * (np.pi/180)
 
+    # Frame unification / per-route alignment
+    # Base is the ZED odom origin (waypoints already live there). rp1/rp2 are
+    # mapped ENU -> odom with route_path/align_gnss_odom.npz.
+    frame_version = 2
+    frame_cache_tag = f"frame_v{frame_version}"
+    lidar_hdf5_name = f"preload_lidar_bev_front_seg_dep_{frame_cache_tag}.hdf5"
+    preload_name_template = f"preload_seq{{seq}}_pred{{pred}}_latlon_fix_{frame_cache_tag}.npy"
+    test_preload_name_template = f"preload_test_split_seq{{seq}}_pred{{pred}}_{frame_cache_tag}.hdf5"
+    transfuser_lidar_hdf5_name = f"transfuser_lidar_bev_front_seg_dep_{frame_cache_tag}.hdf5"
+    transfuser_preload_name_template = f"seq{{seq}}_pred{{pred}}_w{{w}}_{frame_cache_tag}.npy"
+    align_gnss_odom_filename = "align_gnss_odom.npz"
+    route_gnss_base_filename = "route_gnss_base.csv"
+    routepoint_base_template = "{route}_routepoint_list_base.yml"
+
+    # Raw LiDAR -> projection frame (x_forward, y_up, z_left), origin at base.
+    # Default reproduces the legacy (-y, z, x) remap with origin at the LiDAR.
+    # Compose a measured base offset by left-multiplying:
+    #   T_lidar_proj = T_base_offset @ T_LEGACY_REMAP
+    T_lidar_proj = np.array([
+        [0.0, -1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ], dtype=np.float64)
+    T_lidar_proj_ten = torch.from_numpy(T_lidar_proj).to(gpu_device, dtype=dtype)
+
+    # Antenna position in the base frame, [forward, left, up] in metres.
+    # Set the measured values; zero disables the lever-arm correction.
+    gnss_ant_offset_base = [0.0, 0.0, 0.0]
+    enable_gnss_lever_arm = True
+
+    # Ground height relative to the base origin, used by plot_lidfront_rpwp.
+    # With the default legacy remap the base is the LiDAR, so this matches
+    # the old lid_cover_area_bt[0] value.
+    ground_z_base = None  # resolved to lid_cover_area_bt[0] after coverage config
+
     # Coverage areas / depth
     cover_area_lr = lid_cover_area_lr = 16  # left-right
     cover_area_up = lid_cover_area_bt = [-1.5, 6.5]  # bottom-top
@@ -136,6 +172,10 @@ class GlobalConfig:
     bev_multiplier = 9
     front_multiplier = 9
     rear_multiplier = 9
+
+    # Resolve the ground height default now that the coverage config exists.
+    if ground_z_base is None:
+        ground_z_base = lid_cover_area_bt[0]
 
     # PolarSeg
     ignore_label = 0

@@ -51,6 +51,7 @@ def generate_frame(dataset: Dataset, config, index: int) -> np.ndarray:
     filenum = sample['filename']
     velocity = sample['velocity'] * 3.6  # m/s to km/h
     bearing_deg = sample['bearing_robot']
+    bearing_zed_deg = sample.get('bearing_zed', bearing_deg)
     veh_curr_lat = sample['lat_robot']
     veh_curr_lon = sample['lon_robot']
 
@@ -134,7 +135,8 @@ def generate_frame(dataset: Dataset, config, index: int) -> np.ndarray:
         (f"Sample Index: {index}", ""),
         (f"File Name: {filenum}", ""),
         (f"Speed: {format(np.round(velocity, 3), '.3f')} km/h", ""),
-        (f"Bearing: {format(np.round(bearing_deg, 3), '.3f')} deg", ""),
+        (f"Bearing (mag): {format(np.round(bearing_deg, 3), '.3f')} deg", ""),
+        (f"Bearing (zed): {format(np.round(bearing_zed_deg, 3), '.3f')} deg", ""),
         (f"Robot Lat: {format(np.round(veh_curr_lat, 6), '.6f')}", ""),
         (f"Robot Lon: {format(np.round(veh_curr_lon, 6), '.6f')}", ""),
         (f"Rp1 Lat: {format(np.round(rp1_lat, 6), '.6f')}", ""),

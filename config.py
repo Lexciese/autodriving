@@ -126,9 +126,9 @@ class GlobalConfig:
     h_res_rad = h_res * (np.pi/180)
 
     # Frame unification / per-route alignment
-    # Base is the ZED odom origin (waypoints already live there). rp1/rp2 are
-    # mapped ENU -> odom with route_path/align_gnss_odom.npz.
-    frame_version = 2
+    # Base is the ZED odom origin (ZED internal IMU; waypoints already live
+    # there). rp1/rp2 are mapped ENU -> odom with route_path/align_gnss_odom.npz.
+    frame_version = 3
     frame_cache_tag = f"frame_v{frame_version}"
     lidar_hdf5_name = f"preload_lidar_bev_front_seg_dep_{frame_cache_tag}.hdf5"
     preload_name_template = f"preload_seq{{seq}}_pred{{pred}}_latlon_fix_{frame_cache_tag}.npy"
@@ -140,25 +140,30 @@ class GlobalConfig:
     routepoint_base_template = "{route}_routepoint_list_base.yml"
 
     # Raw LiDAR -> projection frame (x_forward, y_up, z_left), origin at base.
-    # Default reproduces the legacy (-y, z, x) remap with origin at the LiDAR.
-    # Compose a measured base offset by left-multiplying:
-    #   T_lidar_proj = T_base_offset @ T_LEGACY_REMAP
+    # Extracted from "Assembly Cleanup.step" (AP242, metres, 1x1 m sensor pod).
+    # Base proxy: ZED Camera geometry bbox centre, since the ZED internal IMU
+    # is not a separate CAD component.
+    # LiDAR geometry centre relative to base (CAD axes +y forward, +x right):
+    #   [forward, left, up] = [-0.6465, -0.0345, 0.2020] m
+    # T_lidar_proj = T_translation([-0.6465, 0.2020, -0.0345]) @ T_LEGACY_REMAP
     T_lidar_proj = np.array([
-        [0.0, -1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0, -0.6465],
+        [0.0, 0.0, 1.0, 0.2020],
+        [1.0, 0.0, 0.0, -0.0345],
         [0.0, 0.0, 0.0, 1.0],
     ], dtype=np.float64)
     T_lidar_proj_ten = torch.from_numpy(T_lidar_proj).to(gpu_device, dtype=dtype)
 
-    # Antenna position in the base frame, [forward, left, up] in metres.
-    # Set the measured values; zero disables the lever-arm correction.
-    gnss_ant_offset_base = [0.0, 0.0, 0.0]
+    # GNSS antenna ("Module GNSS Antenna") relative to the ZED camera base.
+    # CAD axes +y forward, +x right, +z up  ->  base left = -CAD x.
+    # [forward, left, up] in metres.
+    gnss_ant_offset_base = [-0.0490, 0.1346, -0.0350]
     enable_gnss_lever_arm = True
 
     # Ground height relative to the base origin, used by plot_lidfront_rpwp.
-    # With the default legacy remap the base is the LiDAR, so this matches
-    # the old lid_cover_area_bt[0] value.
+    # Not derivable from the CAD. Set to minus the ZED camera height above the
+    # ground (e.g. -2.0 if the camera is 2 m above ground). None falls back to
+    # the legacy lid_cover_area_bt[0] value.
     ground_z_base = None  # resolved to lid_cover_area_bt[0] after coverage config
 
     # Coverage areas / depth

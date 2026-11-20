@@ -49,21 +49,29 @@ Contains all shared math:
 New fields:
 
 ```python
-frame_version = 2
-frame_cache_tag = "frame_v2"
-lidar_hdf5_name = "preload_lidar_bev_front_seg_dep_frame_v2.hdf5"
-preload_name_template = "preload_seq{seq}_pred{pred}_latlon_fix_frame_v2.npy"
-test_preload_name_template = "preload_test_split_seq{seq}_pred{pred}_frame_v2.hdf5"
-transfuser_lidar_hdf5_name = "transfuser_lidar_bev_front_seg_dep_frame_v2.hdf5"
-transfuser_preload_name_template = "seq{seq}_pred{pred}_w{w}_frame_v2.npy"
+frame_version = 3
+frame_cache_tag = "frame_v3"
+lidar_hdf5_name = "preload_lidar_bev_front_seg_dep_frame_v3.hdf5"
+preload_name_template = "preload_seq{seq}_pred{pred}_latlon_fix_frame_v3.npy"
+test_preload_name_template = "preload_test_split_seq{seq}_pred{pred}_frame_v3.hdf5"
+transfuser_lidar_hdf5_name = "transfuser_lidar_bev_front_seg_dep_frame_v3.hdf5"
+transfuser_preload_name_template = "seq{seq}_pred{pred}_w{w}_frame_v3.npy"
 align_gnss_odom_filename = "align_gnss_odom.npz"
 route_gnss_base_filename = "route_gnss_base.csv"
 routepoint_base_template = "{route}_routepoint_list_base.yml"
 
-T_lidar_proj = <4x4>
-gnss_ant_offset_base = [0.0, 0.0, 0.0]
+# Raw LiDAR -> projection frame (x_forward, y_up, z_left), origin at base.
+T_lidar_proj = np.array([
+    [0.0, -1.0, 0.0, -0.6465],
+    [0.0,  0.0, 1.0,  0.2020],
+    [1.0,  0.0, 0.0, -0.0345],
+    [0.0,  0.0, 0.0,  1.0],
+])
+
+# GNSS antenna relative to the ZED camera base, [forward, left, up] metres.
+gnss_ant_offset_base = [-0.0490, 0.1346, -0.0350]
 enable_gnss_lever_arm = True
-ground_z_base = -1.5   # resolved from lid_cover_area_bt[0]
+ground_z_base = None   # set to -camera_height_above_ground
 ```
 
 The new cache names are versioned so that old caches are never silently
@@ -144,20 +152,23 @@ frame with origin at the base:
 p_proj = T_lidar_proj @ [pcd_x, pcd_y, pcd_z, 1]
 ```
 
-The default value is the legacy remap with the origin at the LiDAR:
+The configured value is the CAD-extracted transform: the legacy remap plus a
+translation that moves the origin to the ZED camera base.
 
 ```
-T_lidar_proj = [[ 0, -1,  0, 0],
-                [ 0,  0,  1, 0],
-                [ 1,  0,  0, 0],
-                [ 0,  0,  0, 1]]
+T_lidar_proj = [[ 0, -1,  0, -0.6465],
+                [ 0,  0,  1,  0.2020],
+                [ 1,  0,  0, -0.0345],
+                [ 0,  0,  0,  1.0000]]
 ```
 
-This reproduces `(ptx, pty, ptz) = (-pcd_y, pcd_z, pcd_x)` exactly.
+The legacy remap alone reproduces `(ptx, pty, ptz) = (-pcd_y, pcd_z, pcd_x)`.
+The translation is the LiDAR geometry centre relative to the base in
+projection order `[forward, up, left]`.
 
-To move the origin to the base, compose a base offset in projection axes.
-If the LiDAR origin is at `t_lidar_base = [t_forward, t_left, t_up]` in base
-coordinates, the projection-frame offset is `[t_forward, t_up, t_left]`:
+To change the origin, compose a base offset in projection axes. If the LiDAR
+origin is at `t_lidar_base = [t_forward, t_left, t_up]` in base coordinates,
+the projection-frame offset is `[t_forward, t_up, t_left]`:
 
 ```
 T_base_offset = [[1, 0, 0, t_forward],
@@ -174,8 +185,9 @@ projection frame:
 T_lidar_proj = T_base_offset @ R_res @ T_LEGACY_REMAP
 ```
 
-Replace `config.T_lidar_proj` with the measured 4x4. The default keeps the
-old behaviour and therefore does **not** remove the LiDAR-to-base offset.
+The CAD placement axes for the LiDAR are effectively identity, so no
+rotational term is included. The base proxy is the ZED Camera geometry bbox
+centre, because the ZED internal IMU is not a separate CAD component.
 
 ## 4. GNSS antenna to base
 
@@ -191,9 +203,15 @@ N_base = N - dN
 lat_base, lon_base = enu_to_latlon(E_base, N_base, lat0, lon0)
 ```
 
-The default offset is zero. Set the measured values to actually remove the
-antenna lever arm. After setting it, re-run `preprocess_route.py` and
-`scripts/estimate_route_alignment.py`.
+The configured CAD value is:
+
+```
+gnss_ant_offset_base = [-0.0490, 0.1346, -0.0350]  # [forward, left, up]
+```
+
+This is the `Module GNSS Antenna` geometry bbox centre relative to the ZED
+Camera base, using CAD axes `+y forward`, `+x right`, `+z up`. After changing
+it, re-run `preprocess_route.py` and `scripts/estimate_route_alignment.py`.
 
 ## 5. Per-route rigid alignment
 
@@ -253,13 +271,13 @@ ones:
    `routepoint_list_base.yml`.
 2. `scripts/estimate_route_alignment.py` -> `align_gnss_odom.npz`.
 3. `preprocess_lidar.py` (or let `KarrDataset` rebuild the HDF5) ->
-   `*-frame_v2.hdf5` and new BEV/front images.
+   `*-frame_v3.hdf5` and new BEV/front images.
 4. Delete or ignore old caches; the new names are:
-   - `preload_lidar_bev_front_seg_dep_frame_v2.hdf5`
-   - `preload_seq{seq}_pred{pred}_latlon_fix_frame_v2.npy`
-   - `preload_test_split_seq{seq}_pred{pred}_frame_v2.hdf5`
-   - `transfuser_lidar_bev_front_seg_dep_frame_v2.hdf5`
-   - `seq{seq}_pred{pred}_w{w}_frame_v2.npy`
+   - `preload_lidar_bev_front_seg_dep_frame_v3.hdf5`
+   - `preload_seq{seq}_pred{pred}_latlon_fix_frame_v3.npy`
+   - `preload_test_split_seq{seq}_pred{pred}_frame_v3.hdf5`
+   - `transfuser_lidar_bev_front_seg_dep_frame_v3.hdf5`
+   - `seq{seq}_pred{pred}_w{w}_frame_v3.npy`
 5. Retrain all models: both the BEV/front inputs and rp targets changed.
 
 ## 8. Validation
@@ -274,8 +292,11 @@ ones:
 
 ## 9. Known caveats
 
-- `T_lidar_proj` and `gnss_ant_offset_base` default to legacy/zero values.
-  Fill the measured 4x4 and antenna offset to actually remove sensor offsets.
+- `T_lidar_proj` and `gnss_ant_offset_base` now contain values extracted from
+  `Assembly Cleanup.step`. The base proxy is the ZED Camera geometry bbox
+  centre because the ZED internal IMU is not a separate CAD component.
+- `ground_z_base` is still `None` and falls back to `lid_cover_area_bt[0]`.
+  Set it to minus the ZED camera height above the ground.
 - ZED odom yaw can drift on long routes. A single per-route alignment is
   enough only while the residual stays small; otherwise use a sliding-window
   offset.

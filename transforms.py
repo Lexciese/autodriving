@@ -52,12 +52,12 @@ T_LEGACY_REMAP = np.array(
 
 
 FRAME_DEFAULTS = {
-    "frame_version": 2,
-    "lidar_hdf5_name": "preload_lidar_bev_front_seg_dep_frame_v2.hdf5",
-    "preload_name_template": "preload_seq{seq}_pred{pred}_latlon_fix_frame_v2.npy",
-    "test_preload_name_template": "preload_test_split_seq{seq}_pred{pred}_frame_v2.hdf5",
-    "transfuser_lidar_hdf5_name": "transfuser_lidar_bev_front_seg_dep_frame_v2.hdf5",
-    "transfuser_preload_name_template": "seq{seq}_pred{pred}_w{w}_frame_v2.npy",
+    "frame_version": 3,
+    "lidar_hdf5_name": "preload_lidar_bev_front_seg_dep_frame_v3.hdf5",
+    "preload_name_template": "preload_seq{seq}_pred{pred}_latlon_fix_frame_v3.npy",
+    "test_preload_name_template": "preload_test_split_seq{seq}_pred{pred}_frame_v3.hdf5",
+    "transfuser_lidar_hdf5_name": "transfuser_lidar_bev_front_seg_dep_frame_v3.hdf5",
+    "transfuser_preload_name_template": "seq{seq}_pred{pred}_w{w}_frame_v3.npy",
     "align_gnss_odom_filename": "align_gnss_odom.npz",
     "route_gnss_base_filename": "route_gnss_base.csv",
     "routepoint_base_template": "{route}_routepoint_list_base.yml",

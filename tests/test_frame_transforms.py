@@ -75,7 +75,7 @@ class FrameTransformTests(unittest.TestCase):
         class LegacyConfig:
             pass
 
-        self.assertEqual(cfg(LegacyConfig(), "frame_version"), 2)
+        self.assertEqual(cfg(LegacyConfig(), "frame_version"), 3)
         np.testing.assert_allclose(cfg(LegacyConfig(), "T_lidar_proj"), T_LEGACY_REMAP)
 
 

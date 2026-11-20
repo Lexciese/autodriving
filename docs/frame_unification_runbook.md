@@ -12,24 +12,27 @@ The training environment is `dl`:
 conda run -n dl python <script>
 ```
 
-## 0. Fill the measured extrinsics
+## 0. Installed extrinsics
 
-Before running anything, set these in `config.py`:
+`config.py` already contains the values extracted from
+`Assembly Cleanup.step`:
 
 ```python
-# raw LiDAR -> projection frame (x_forward, y_up, z_left), origin at base.
-# Default is the legacy (-y, z, x) remap with origin at the LiDAR.
-T_lidar_proj = np.array([...], dtype=np.float64)
-
-# Antenna position in the base frame, [forward, left, up] metres.
-gnss_ant_offset_base = [x, y, z]
-
-# Ground height relative to the base origin (negative below the base).
-ground_z_base = -base_height_above_ground
+T_lidar_proj = np.array([
+    [0.0, -1.0, 0.0, -0.6465],
+    [0.0,  0.0, 1.0,  0.2020],
+    [1.0,  0.0, 0.0, -0.0345],
+    [0.0,  0.0, 0.0,  1.0],
+])
+gnss_ant_offset_base = [-0.0490, 0.1346, -0.0350]  # [forward, left, up]
+ground_z_base = None  # set to -camera_height_above_ground
 ```
 
-If the LiDAR is mounted at `t_lidar_base = [t_forward, t_left, t_up]` in base
-coordinates, compose:
+The base proxy is the ZED Camera geometry bbox centre, because the ZED
+internal IMU is not a separate CAD component. If you have the ZED datasheet
+offset for the internal IMU, refine the values.
+
+To recompose the LiDAR transform manually:
 
 ```python
 T_base_offset = np.array([
@@ -97,7 +100,7 @@ Alternatively, delete the old HDF5 and let `KarrDataset` rebuild it on first
 use. The new name is:
 
 ```
-preload_lidar_bev_front_seg_dep_frame_v2.hdf5
+preload_lidar_bev_front_seg_dep_frame_v3.hdf5
 ```
 
 ## 4. Rebuild preload caches
@@ -106,10 +109,10 @@ The new versioned names mean old caches are ignored automatically. The new
 files are created on first dataset access:
 
 ```
-preload_seq{seq}_pred{pred}_latlon_fix_frame_v2.npy
-preload_test_split_seq{seq}_pred{pred}_frame_v2.hdf5
-transfuser_lidar_bev_front_seg_dep_frame_v2.hdf5
-seq{seq}_pred{pred}_w{w}_frame_v2.npy
+preload_seq{seq}_pred{pred}_latlon_fix_frame_v3.npy
+preload_test_split_seq{seq}_pred{pred}_frame_v3.hdf5
+transfuser_lidar_bev_front_seg_dep_frame_v3.hdf5
+seq{seq}_pred{pred}_w{w}_frame_v3.npy
 ```
 
 To force a rebuild, delete those files.
@@ -169,10 +172,11 @@ conda run -n dl python -m py_compile transforms.py config.py \
 
 ### rp looks shifted by a constant distance
 
-- `T_lidar_proj` still has the LiDAR origin, so the LiDAR projections are
-  offset from the odom origin. Set the LiDAR translation in `T_lidar_proj`.
-- `gnss_ant_offset_base` is still zero, so the GNSS route points are still
-  antenna-centred.
+- Check the CAD axis signs. If `+CAD y` is not vehicle forward or `+CAD x`
+  is not vehicle right, the left/forward components of `T_lidar_proj` and
+  `gnss_ant_offset_base` need their signs changed.
+- The base is a proxy (ZED camera bbox centre). If the ZED internal IMU is
+  offset from that point, refine both values with the datasheet.
 
 ### Front rp markers are too high or too low
 

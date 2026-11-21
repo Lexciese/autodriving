@@ -465,7 +465,8 @@ def main():
 
     try:
         from jtop import jtop  # type: ignore
-    except ImportError:
+    except ImportError as e:
+        print(f"[jtop] import failed, system metrics will be NaN: {e}")
         jtop = None
 
     import torch
@@ -533,6 +534,10 @@ def main():
                 jetson.start()
             except Exception as e:
                 print(f"[jtop] unavailable, energy stats will be NaN: {e}")
+                if "Mismatch version" in str(e):
+                    print("[jtop] pin the conda client to the running service version, e.g. "
+                          "pip install 'jetson-stats==7.2.2'; if the system package was upgraded, "
+                          "also run: sudo systemctl restart jtop.service")
                 jetson = None
 
         #tampilkan info board dan mode daya

@@ -456,9 +456,18 @@ def main():
     parser.add_argument("--route", action='append', type=str, help='set routes, you can combine multiple routes. e.g: --route "a" --route "b" ...')
     parser.add_argument("--warmup", type=int, default=3, help='number of warm-up batches excluded from summary stats (default: 3)')
     parser.add_argument("--mode", choices=["model", "pipeline", "both"], default="both", help='benchmark scope: model only, pipeline (PolarSeg+projection+model), or both (default: both)')
+    parser.add_argument("--logdir", type=Path, default=None, help='path to a specific log run directory containing config.py and best_model.pth; when omitted, the interactive selector is used')
     args = parser.parse_args()
 
-    logdir = _select_logdir()
+    if args.logdir is not None:
+        logdir = args.logdir.expanduser().resolve()
+        if not logdir.is_dir():
+            parser.error(f"--logdir is not a directory: {logdir}")
+        missing = [name for name in ("config.py", "best_model.pth") if not (logdir / name).is_file()]
+        if missing:
+            parser.error(f"--logdir {logdir} is incomplete, missing: {', '.join(missing)}")
+    else:
+        logdir = _select_logdir()
     gpu_id = _read_gpu_id(logdir / "config.py") or os.environ.get("CUDA_VISIBLE_DEVICES") or "0"
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)

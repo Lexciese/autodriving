@@ -1,0 +1,27 @@
+# Jetson deployment queue example (whitespace separated)
+# Format: logdir route mode [warmup]
+# - warmup is optional; omitted means the test script default (3)
+# - blank lines and lines starting with '#' are ignored
+# - logdir can be absolute, relative to this file, or relative to the repo root
+# - multiple routes in one job can be separated with ';', '|', '+', or quoted whitespace
+#
+# logdir route mode warmup
+
+log/ai23_segdep_seq1_15_11_2026-22_04_route_ringroad-711 ugm_baru both 3
+log/ai23_segdep_seq1_15_11_2026-22_04_route_ringroad-711 ringroad-711 both 3
+
+log/xr20_segdep_seq1_12_11_2026-22_29_route_ringroad-711 ugm_baru both 3
+log/xr20_segdep_seq1_12_11_2026-22_29_route_ringroad-711 ringroad-711 both 3
+log/xr20_segdep_seq1_12_11_2026-22_29_route_ringroad-711 ugm_baru;ringroad-711 both 3
+
+log/xr20_segdep_seq1_12_11_2026-13_32_route_ugm_baru ugm_baru both 3
+log/xr20_segdep_seq1_12_11_2026-13_32_route_ugm_baru ringroad-711 both 3
+log/xr20_segdep_seq1_12_11_2026-13_32_route_ugm_baru ugm_baru;ringroad-711 both 3
+
+log/ai33_segdep_seq1_12_11_2026-13_32_route_ugm_baru ugm_baru both 3
+log/ai33_segdep_seq1_12_11_2026-13_32_route_ugm_baru ringroad-711 both 3
+log/ai33_segdep_seq1_12_11_2026-13_32_route_ugm_baru ugm_baru;ringroad-711 both 3
+
+log/ai33_segdep_seq1_12_11_2026-22_29_route_ringroad-711 ugm_baru both 3
+log/ai33_segdep_seq1_12_11_2026-22_29_route_ringroad-711 ringroad-711 both 3
+log/ai33_segdep_seq1_12_11_2026-22_29_route_ringroad-711 ugm_baru;ringroad-711 both 3

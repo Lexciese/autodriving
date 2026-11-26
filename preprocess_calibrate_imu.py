@@ -8,13 +8,9 @@ import yaml
 from config import GlobalConfig
 
 config = GlobalConfig()
-HZ = float(config.hz)
 MIN_SPEED_KMH, MAX_YAW_RATE_DEG_S = 1.0, 3.0
 STRAIGHT_WINDOW, MAX_WINDOW_SPAN_DEG = 5, 4.0
-
-# Frame-level thresholds derived directly from config.hz
-MIN_DISP_M = (MIN_SPEED_KMH / 3.6) / HZ
-MAX_YAW_STEP_DEG = MAX_YAW_RATE_DEG_S / HZ
+DEFAULT_DT_S = getattr(config, "gnss_dt", 1.0)
 SECTOR_NAMES = ["0 to 60", "60 to 120", "120 to 180", "-180 to -120", "-120 to -60", "-60 to 0"]
 
 wrap_rad = lambda r: (r + np.pi) % (2 * np.pi) - np.pi
@@ -24,6 +20,7 @@ rmse = lambda x: float(np.sqrt(np.mean(np.square(x)))) if len(x) else 0.0
 
 
 def bearing_biasing(angles_deg, b):
+    """Vectorized 6-sector piecewise-linear bias correction matching original breakpoints."""
     mid = (b[2] + b[3]) / 2.0
     xp = [-180, -170, -130, -110, -70, -50, 0, 50, 70, 110, 130, 170, 180]
     fp = [mid, b[3], b[3], b[4], b[4], b[5], b[0], b[0], b[1], b[1], b[2], b[2], mid]
@@ -36,28 +33,29 @@ def quat_to_yaw(q):
     return wrap_rad(np.arctan2(-(1.0 - 2.0 * (y * y + z * z)), 2.0 * (w * z + x * y)))
 
 
-def delta_latlon_to_disp_and_yaw(lat, lon):
-    """Compute step displacement (m) and forward yaw (rad) from delta lat/lon."""
+def haversine_and_yaw(lat, lon):
+    """Vectorized distance (m) and forward bearing (rad) between consecutive points."""
     r_lat, r_lon = np.radians(lat), np.radians(lon)
     dlat, dlon = np.diff(r_lat), np.diff(r_lon)
     a = np.sin(dlat / 2) ** 2 + np.cos(r_lat[:-1]) * np.cos(r_lat[1:]) * np.sin(dlon / 2) ** 2
-    disp_m = 2.0 * 6371000.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
-
+    dist = 2.0 * 6371000.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
     x = np.sin(dlon) * np.cos(r_lat[1:])
     y = np.cos(r_lat[:-1]) * np.sin(r_lat[1:]) - np.sin(r_lat[:-1]) * np.cos(r_lat[1:]) * np.cos(dlon)
-    gnss_yaws = np.append(np.where(disp_m >= max(0.05, MIN_DISP_M), wrap_rad(np.arctan2(-x, y)), np.nan), np.nan)
-    return disp_m, gnss_yaws
+    yaw = np.append(np.where(dist >= 0.05, wrap_rad(np.arctan2(-x, y)), np.nan), np.nan)
+    return dist, yaw
 
 
-def get_straight_mask(disp_m, imu_yaws, gnss_yaws):
-    n = len(imu_yaws)
-    imu_step = np.abs(np.degrees(wrap_rad(np.diff(imu_yaws))))
-    gnss_diff = np.abs(np.degrees(wrap_rad(np.diff(gnss_yaws))))
-    gnss_step = np.where(np.isnan(gnss_diff), 0.0, gnss_diff)
+def get_straight_mask(dist_m, imu_yaws, gnss_yaws, ts):
+    n, dt = len(imu_yaws), np.diff(ts)
+    valid_dt = dt > 0
+    speed_kmh = np.where(valid_dt, (dist_m / np.where(valid_dt, dt, 1.0)) * 3.6, 0.0)
+    imu_rate = np.where(valid_dt, np.abs(np.degrees(wrap_rad(np.diff(imu_yaws)))) / np.where(valid_dt, dt, 1.0), np.inf)
+    gnss_diff = np.degrees(wrap_rad(np.diff(gnss_yaws)))
+    gnss_rate = np.where(valid_dt & ~np.isnan(gnss_diff), np.abs(gnss_diff) / np.where(valid_dt, dt, 1.0), 0.0)
 
     step_ok = np.append(
-        (disp_m > MIN_DISP_M) & ~np.isnan(gnss_yaws[:-1])
-        & (imu_step <= MAX_YAW_STEP_DEG) & (gnss_step <= MAX_YAW_STEP_DEG),
+        valid_dt & (speed_kmh > MIN_SPEED_KMH) & ~np.isnan(gnss_yaws[:-1])
+        & (imu_rate <= MAX_YAW_RATE_DEG_S) & (gnss_rate <= MAX_YAW_RATE_DEG_S),
         False,
     )
     mask = np.zeros(n, dtype=bool)
@@ -71,7 +69,7 @@ def get_straight_mask(disp_m, imu_yaws, gnss_yaws):
     return mask
 
 
-print(f"Selected routes: {config.select_route} | Rate: {HZ} Hz (min disp: {MIN_DISP_M:.3f} m/frame)")
+print(f"Selected routes: {config.select_route}")
 for route in config.select_route:
     subfolder = config.datadir / route
     gnss_file = subfolder / f"{route}_gnss.csv"
@@ -80,26 +78,31 @@ for route in config.select_route:
 
     gnss_df = pd.read_csv(gnss_file)
     gnss_df["ts_key"] = gnss_df["timestamp"].astype(str).str.replace(".yml", "", regex=False)
-    gnss_map = gnss_df.set_index("ts_key")[["latitude", "longitude"]].to_dict("index")
+    t_col = next((c for c in ["time", "timestamp_s", "sec", "epoch"] if c in gnss_df.columns), None)
+    gnss_map = gnss_df.set_index("ts_key").to_dict("index")
 
     rows = []
-    for yml_file in sorted((subfolder / "meta").glob("*.yml")):
+    for idx, yml_file in enumerate(sorted((subfolder / "meta").glob("*.yml"))):
         row = gnss_map.get(yml_file.stem)
         data = yaml.safe_load(yml_file.read_text()) if row else None
         if row and data and data.get("global_orientation_xyzw") is not None:
-            rows.append((row["latitude"], row["longitude"], quat_to_yaw(data["global_orientation_xyzw"])))
+            t = row[t_col] if (t_col and pd.notna(row[t_col])) else (
+                data["timestamp"] if isinstance(data.get("timestamp"), (int, float)) else idx * DEFAULT_DT_S
+            )
+            rows.append((row["latitude"], row["longitude"], quat_to_yaw(data["global_orientation_xyzw"]), float(t)))
 
     if len(rows) < 2:
         print(f"[WARNING] Insufficient matched frames for {route}.")
         continue
 
-    lats, lons, imu_yaws = map(np.array, zip(*rows))
-    disp_m, gnss_yaws = delta_latlon_to_disp_and_yaw(lats, lons)
-    mask = get_straight_mask(disp_m, imu_yaws, gnss_yaws)
+    lats, lons, imu_yaws, ts = map(np.array, zip(*rows))
+    dist_m, gnss_yaws = haversine_and_yaw(lats, lons)
+    mask = get_straight_mask(dist_m, imu_yaws, gnss_yaws, ts)
     if not np.any(mask):
-        print(f"[WARNING] No straight moving samples > {MIN_DISP_M:.3f} m/frame for {route}.")
+        print(f"[WARNING] No straight moving samples > {MIN_SPEED_KMH} km/h for {route}.")
         continue
 
+    # Sector assignment (0..5) and bias calculation
     raw_deg = np.degrees(imu_yaws)
     sec_ids = np.floor(raw_deg / 60.0).astype(int) % 6
     sec_ids[raw_deg == 180.0] = 2
@@ -113,7 +116,7 @@ for route in config.select_route:
     raw_err = np.degrees(wrap_rad(imu_yaws[mask] - gnss_yaws[mask]))
     corr_err = np.degrees(wrap_rad(np.radians(corr_deg[mask]) - gnss_yaws[mask]))
 
-    print(f"\n[{route}] Total frames: {len(lats)} | Straight > {MIN_SPEED_KMH} km/h ({MIN_DISP_M:.3f} m): {mask.sum()}")
+    print(f"\n[{route}] Total frames: {len(lats)} | Straight > {MIN_SPEED_KMH} km/h: {mask.sum()}")
     print(f"  bearing_bias (deg): {bias}")
     for name, b_val, cnt in zip(SECTOR_NAMES, bias, counts):
         print(f"    Sector [{name:>11} deg]: {b_val:+7.2f}°  (n={cnt}){' (fallback: global mean)' if not cnt else ''}")

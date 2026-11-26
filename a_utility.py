@@ -26,6 +26,17 @@ def magneto_to_yaw(mx, my, offset=0.0):
     yaw = np.arctan2(-my, mx)
     return ((yaw + offset) + np.pi) % (2.0 * np.pi) - np.pi
 
+def new_yaw_from_quaternion(w, x, y, z, offset=0.0):
+    """
+    Convert quaternion [x, y, z, w] (ENU frame) to CCW yaw in radians [-pi, pi)
+    matching latlon_to_yaw (0 = North, +pi/2 = West, -pi/2 = East).
+    """
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = np.arctan2(-cosy_cosp, siny_cosp)
+    return ((yaw + offset) + np.pi) % (2 * np.pi) - np.pi
+
+
 def euler_from_quaternion(w, x, y, z, rad=True): #urutannya q0, q1, q2, q3
     #https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
     #https://automaticaddison.com/how-to-convert-a-quaternion-into-euler-angles-in-python/

@@ -15,7 +15,7 @@ import torch
 import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset, DataLoader, Subset, random_split
 
-from a_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, resize_img, cls2one_hot, colorize_depth
+from a_utility import compute_imu_yaw, magneto_to_yaw, latlon_to_yaw, new_yaw_from_quaternion, euler_from_quaternion, transform_2d_points, resizecrop_matrix, crop_matrix, resize_img, cls2one_hot, colorize_depth
 from a_utility import hampel_filter, bearing_filter
 from config import GlobalConfig
 from preprocess_lidar import gen_bev_front_rear_seg_dep_numpy
@@ -85,11 +85,13 @@ class KarrDataset(Dataset):
                 'cos': deque(maxlen=5)
             }
 
+            imu_bias_yml = path / f"{route}_imu_sector_bias.yml"
+
             route_hdf5_path = path / "lidar" / "preload_lidar_bev_front_seg_dep.hdf5"
             lidar_hdf5 = h5py.File(route_hdf5_path, "a", locking=False)
             frames_grp = lidar_hdf5.require_group("frames")
 
-            preload_path = path / f"preload_seq{str(self.seq_len)}_pred{self.pred_len}_latlon_fix.npy"
+            preload_path = path / f"preload_seq{str(self.seq_len)}_pred{self.pred_len}_latlon_fix_imu_fix.npy"
             if preload_path.exists():
                 self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)
@@ -104,6 +106,13 @@ class KarrDataset(Dataset):
                 #assign end point sebagai route terakhir
                 rp_list['route_point']['latitude'].append(rp_list['last_point']['latitude'])
                 rp_list['route_point']['longitude'].append(rp_list['last_point']['longitude'])
+
+            gnss_file = Path(path / f"{route}_gnss.csv")
+            gnss_df = pd.read_csv(gnss_file)
+
+            with Path(imu_bias_yml).open("r") as f:
+                bearing_bias = yaml.safe_load(f)
+            bearing_bias = bearing_bias["bearing_bias_deg"]
 
             # Past: [current_idx - seq_len + 1, current_idx]                -> rgb, raw_pcd, seg_pcd
             # Current: self.files[current_idx]                              -> local position & heading, latlon, velocity
@@ -154,30 +163,34 @@ class KarrDataset(Dataset):
                 seq_local_y.append(meta_current["local_position_xyz"][1])
                 local_quaternion = meta_current["local_orientation_xyzw"]
                 seq_local_heading.append(euler_from_quaternion(local_quaternion[3], local_quaternion[0], local_quaternion[1], local_quaternion[2], rad=True)[2])
-                gnss_file = Path(path / f"{route}_gnss.csv")
-                gnss_df = pd.read_csv(gnss_file)
                 curr_lat, curr_lon = gnss_df[gnss_df['timestamp'] == filename][['latitude', 'longitude']].values[0]
 
                 velocity = np.abs(meta_current["velocity"])
 
                 # curr_lat, curr_lon, is_outlier = hampel_filter(raw_curr_lat, raw_curr_lon, latlon_buffer, n_sigmas=3.0)
 
-                raw_mag = meta_current['magnetic_field']
-                magneto_x0, magneto_y0 = self.magnetometer_calib["offset"]
-                Q = np.array(self.magnetometer_calib["Q"])
-                # Apply Offset and Soft-Iron Q Matrix
-                scale = 1e6
-                x_body = raw_mag[0] * scale # Forward (+X)
-                y_body = raw_mag[2] * scale # Left (+Y)
-                z_body = raw_mag[1] * scale # Up (+Z)
-                mags_offset = np.column_stack([x_body - magneto_x0, y_body - magneto_y0])
-                mags_calibrated_xy = mags_offset @ Q.T
-                x_cal = mags_calibrated_xy[:, 0]
-                y_cal = mags_calibrated_xy[:, 1]
-                z_cal = z_body - np.mean(z_body)
-                corrected_magneto_bearing = magneto_to_yaw(x_cal, y_cal)[0]
-        
-                bearing = bearing_filter(corrected_magneto_bearing, bearing_buffer)
+                # raw_mag = meta_current['magnetic_field']
+                # magneto_x0, magneto_y0 = self.magnetometer_calib["offset"]
+                # Q = np.array(self.magnetometer_calib["Q"])
+                # # Apply Offset and Soft-Iron Q Matrix
+                # scale = 1e6
+                # x_body = raw_mag[0] * scale # Forward (+X)
+                # y_body = raw_mag[2] * scale # Left (+Y)
+                # z_body = raw_mag[1] * scale # Up (+Z)
+                # mags_offset = np.column_stack([x_body - magneto_x0, y_body - magneto_y0])
+                # mags_calibrated_xy = mags_offset @ Q.T
+                # x_cal = mags_calibrated_xy[:, 0]
+                # y_cal = mags_calibrated_xy[:, 1]
+                # z_cal = z_body - np.mean(z_body)
+                # corrected_magneto_bearing = magneto_to_yaw(x_cal, y_cal)[0]
+
+                # bearing = bearing_filter(corrected_magneto_bearing, bearing_buffer)
+
+                global_quaternion = meta_current["global_orientation_xyzw"]
+                global_yaw = new_yaw_from_quaternion(global_quaternion[3], global_quaternion[0], global_quaternion[1], global_quaternion[2])
+
+                corrected_bearing = np.deg2rad(bearing_biasing(np.rad2deg(global_yaw), bearing_bias))
+                bearing = bearing_filter(corrected_bearing, bearing_buffer)
 
                 self.preload_data["bearing"].append(bearing)
                 self.preload_data["lat"].append(curr_lat)
@@ -402,6 +415,66 @@ class SplitDataset:
         self.val_set = Subset(val_dataset, val_indices)
         self.test_set = Subset(test_dataset, test_indices)
         self.total_len = len(self.train_set) + len(self.val_set) + len(self.test_set)
+
+
+def bias_slope(in_angle, bias_start, bias_end, angle_start, angle_end):
+    """Linearly interpolate bias across sector transition boundaries."""
+    if angle_end == angle_start:
+        return bias_start
+    ratio = (in_angle - angle_start) / (angle_end - angle_start)
+    return bias_start + ratio * (bias_end - bias_start)
+
+def bearing_biasing(in_angle, bearing_bias):
+    """Apply 6-sector piecewise-linear bias correction to raw IMU yaw (deg)."""
+    if isinstance(bearing_bias, dict):
+        bias_map = bearing_bias.get("bearing_bias_deg", bearing_bias)
+        b0 = bias_map["0 to 60"]
+        b1 = bias_map["60 to 120"]
+        b2 = bias_map["120 to 180"]
+        b3 = bias_map["-180 to -120"]
+        b4 = bias_map["-120 to -60"]
+        b5 = bias_map["-60 to 0"]
+    else:
+        b0, b1, b2, b3, b4, b5 = bearing_bias
+
+    if 0 <= in_angle < 50:
+        bias_x = b0
+    elif 50 <= in_angle < 70:
+        bias_x = bias_slope(in_angle, b0, b1, 50, 70)
+    elif 70 <= in_angle < 110:
+        bias_x = b1
+    elif 110 <= in_angle < 130:
+        bias_x = bias_slope(in_angle, b1, b2, 110, 130)
+    elif 130 <= in_angle < 170:
+        bias_x = b2
+    elif 170 <= in_angle <= 180:
+        bias_x = bias_slope(in_angle, b2, (b2 + b3) / 2.0, 170, 180)
+    elif -180 <= in_angle < -170:
+        bias_x = bias_slope(in_angle, (b2 + b3) / 2.0, b3, -180, -170)
+    elif -170 <= in_angle < -130:
+        bias_x = b3
+    elif -130 <= in_angle < -110:
+        bias_x = bias_slope(in_angle, b3, b4, -130, -110)
+    elif -110 <= in_angle < -70:
+        bias_x = b4
+    elif -70 <= in_angle < -50:
+        bias_x = bias_slope(in_angle, b4, b5, -70, -50)
+    elif -50 <= in_angle < 0:
+        bias_x = b5
+    else:
+        bias_x = 0.0
+
+    biased_angle = in_angle + bias_x
+
+    # Normalize to [-180, 180]
+    if biased_angle > 180:
+        bearing_veh_deg = biased_angle - 360
+    elif biased_angle < -180:
+        bearing_veh_deg = biased_angle + 360
+    else:
+        bearing_veh_deg = biased_angle
+
+    return bearing_veh_deg
 
 
 if __name__ == "__main__":

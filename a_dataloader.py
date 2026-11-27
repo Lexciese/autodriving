@@ -28,7 +28,7 @@ class KarrDataset(Dataset):
         self.pred_len = self.config.pred_len
         self.data_rate = self.config.hz
         self.rp1_close = self.config.rp1_close
-        self.magnetometer_calib = self.config.magnetometer_calib
+        # self.magnetometer_calib = self.config.magnetometer_calib
 
         self.filename = []
         self.rgb = []
@@ -91,7 +91,7 @@ class KarrDataset(Dataset):
             lidar_hdf5 = h5py.File(route_hdf5_path, "a", locking=False)
             frames_grp = lidar_hdf5.require_group("frames")
 
-            preload_path = path / f"preload_seq{str(self.seq_len)}_pred{self.pred_len}_latlon_fix_imu_fix.npy"
+            preload_path = path / f"preload_seq{str(self.seq_len)}_pred{self.pred_len}_hz{self.config.hz}_rp1close{self.config.rp1_close}.npy"
             if preload_path.exists():
                 self.preload_data = np.load(preload_path, allow_pickle=True)
                 self._load_preload(self.preload_data)

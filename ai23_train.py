@@ -17,7 +17,7 @@ torch.backends.cudnn.benchmark = True
 import shutil
 from ai23_model import ai23
 from a_dataloader import KarrDataset, SplitDataset
-from config import GlobalConfig, select_logdir
+from config import GlobalConfig, select_logdir, set_seed
 import config as config_module
 
 # Class untuk penyimpanan dan perhitungan update loss
@@ -236,6 +236,7 @@ def main():
     config.model = "ai23"
     config.logdir = PROJECT_ROOT / "log" / f"{config.model}_{config.inputs}_seq1_{config.string_date}_route_{'_'.join(config.select_route)}"
 
+    set_seed(config.seed)
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_id

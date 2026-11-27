@@ -314,6 +314,7 @@ def main():
     from torch.utils.data import DataLoader
     from jetson_deployment_dataloader import KarrDataset
     from preprocess_lidar import GenerateLidSegDep
+    from config import set_seed
 
     try:
         import tensorrt as trt
@@ -327,6 +328,8 @@ def main():
     jdt.F = F
 
     config = _load_log_config(logdir / "config.py")
+
+    set_seed(getattr(config, "seed", 42))
 
     available_route = ["ugm_baru", "ringroad-711", "utara", "selatan"]
     if len(sys.argv) == 1:

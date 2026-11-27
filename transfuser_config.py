@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import os
+import random
 from datetime import datetime
 from pathlib import Path
 import yaml
@@ -8,6 +9,7 @@ import yaml
 PROJECT_ROOT = Path("/media/mf/SATA4TB/autodriving")
 
 class GlobalConfig:
+    seed = 42  # single seed shared by training, test, and random generation
     now = datetime.now()
     string_date = now.strftime("%d_%m_%Y-%H_%M")
     bev_h = 128
@@ -83,7 +85,7 @@ class GlobalConfig:
     dtype = torch.float32
     cover_area_lr = 16 #kiri - kanan
     cover_area_f = [1.25, 17.25] #posisi camera -> area interest max
-    
+
     #lidar setting, cek HDL-32E dan VLP32C LiDAR sensor datasheet
     cover_area_up = lid_cover_area_bt = [-1.5, 6.5]  # bottom-top relative to LiDAR
     lidar_ground_z = cover_area_up[0]  # road height in the LiDAR frame (m)
@@ -131,3 +133,17 @@ class GlobalConfig:
     def __init__(self, **kwargs):
         for k,v in kwargs.items():
             setattr(self, k, v)
+
+def set_seed(seed=42):
+    """Seed Python, NumPy, and PyTorch (CPU + CUDA) RNGs."""
+    seed = int(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    return seed

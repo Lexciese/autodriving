@@ -14,11 +14,8 @@ torch.backends.cudnn.benchmark = True
 import shutil
 from transfuser_model import transfuser
 from transfuser_dataloader import KarrDataset, SplitDataset#, gen_bev_front_seg_dep#, custom_collate
-from transfuser_config import GlobalConfig
+from transfuser_config import GlobalConfig, set_seed
 from torch.utils.tensorboard import SummaryWriter
-# import random
-# random.seed(0)
-# torch.manual_seed(0)
 
 #Class untuk penyimpanan dan perhitungan update loss
 class AverageMeter(object):
@@ -171,7 +168,9 @@ def validate(data_loader, model, config, writer, cur_epoch):
 def main():
     # Load config
     config = GlobalConfig()
-    
+
+    set_seed(config.seed)
+
     #SET GPU YANG AKTIF
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" 

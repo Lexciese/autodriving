@@ -1,4 +1,5 @@
 import os
+import random
 from datetime import datetime
 from pathlib import Path
 import yaml
@@ -11,6 +12,7 @@ PROJECT_ROOT = Path("/media/mf/SATA4TB/autodriving")
 
 class GlobalConfig:
     # General / device
+    seed = 42
     now = datetime.now()
     string_date = now.strftime("%d_%m_%Y-%H_%M")
     use_tensor = True
@@ -56,7 +58,7 @@ class GlobalConfig:
 
     # Training
     inputs = 'segdep'  # segdep | seg | dep
-    model = 'ai23' # xr20 
+    model = 'ai23' # xr20
     logdir = PROJECT_ROOT / "log" / f"{model}_{inputs}_seq1_{string_date}_route_{'_'.join(select_route)}"
     init_stop_counter = 40
     batch_size = 10
@@ -218,3 +220,17 @@ def select_logdir(log_root=None):
         if choice.isdigit() and 1 <= int(choice) <= len(runs):
             return runs[int(choice) - 1]
         print("Invalid selection, please try again.")
+
+def set_seed(seed=42):
+    """Seed Python, NumPy, and PyTorch (CPU + CUDA) RNGs."""
+    seed = int(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    return seed

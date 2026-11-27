@@ -16,7 +16,7 @@ torch.backends.cudnn.benchmark = True
 import shutil
 from xr20_model import xr20
 from a_dataloader import KarrDataset, SplitDataset
-from config import GlobalConfig
+from config import GlobalConfig, set_seed
 import config as config_module
 
 
@@ -232,6 +232,7 @@ def main():
     config.model = "xr20"
     config.logdir = PROJECT_ROOT / "log" / f"{config.model}_{config.inputs}_seq1_{config.string_date}_route_{'_'.join(config.select_route)}"
 
+    set_seed(config.seed)
     torch.backends.cudnn.benchmark = True
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_id

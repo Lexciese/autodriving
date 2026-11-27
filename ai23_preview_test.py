@@ -19,7 +19,7 @@ from a_dataloader import KarrDataset, SplitDataset
 from preprocess_util import plot_lidbev_rpwp, plot_lidfront_rpwp
 
 # use the config from the log directory
-from config import GlobalConfig, select_logdir
+from config import GlobalConfig, select_logdir, set_seed
 import importlib.util
 from typing import cast
 
@@ -296,6 +296,7 @@ def main():
     config.logdir = logdir
     config.select_route = ["ugm_baru"]
 
+    set_seed(getattr(config, "seed", 42))
 
     #SET GPU YANG AKTIF
     torch.backends.cudnn.benchmark = True

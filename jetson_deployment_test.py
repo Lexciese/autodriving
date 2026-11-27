@@ -485,6 +485,7 @@ def main():
     from ai23_model import ai23
     from ai33_model import ai33
     from jetson_deployment_dataloader import KarrDataset
+    from config import set_seed
 
     torch.backends.cudnn.benchmark = True
 
@@ -496,6 +497,8 @@ def main():
     spec.loader.exec_module(log_config)
     config = cast(Any, log_config.GlobalConfig())
     config.logdir = logdir
+
+    set_seed(getattr(config, "seed", 42))
 
     available_route = ["ugm_baru", "ringroad-711", "utara", "selatan"]
     if len(sys.argv) == 1:

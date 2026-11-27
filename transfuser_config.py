@@ -15,7 +15,7 @@ class GlobalConfig:
     front_h = bev_h
     front_w = bev_w
     hz = 4 #1 detik ada berapa sample yang direcord
-    rp1_close = 7  # min distance (m) to advance to the next route point
+    rp1_close = 4  # min distance (m) to advance to the next route point
     magnetometer_calib = yaml.safe_load(open(PROJECT_ROOT / "common" / "magnetometer_calib.yaml", "r"))
 
 
@@ -85,6 +85,9 @@ class GlobalConfig:
     cover_area_f = [1.25, 17.25] #posisi camera -> area interest max
     
     #lidar setting, cek HDL-32E dan VLP32C LiDAR sensor datasheet
+    cover_area_up = lid_cover_area_bt = [-1.5, 6.5]  # bottom-top relative to LiDAR
+    lidar_ground_z = cover_area_up[0]  # road height in the LiDAR frame (m)
+    hist_max_per_pixel = 5  # occupancy clamp for the TransFuser LiDAR histogram
     lidar_sensor = "rs32" #vlp32c hdl32e
     if lidar_sensor == "hdl32e":
         v_fov = [-30.67, 10.67] # HDL32 pakai [-30.67, 10.67], VLP32 pakai [-25, 15]

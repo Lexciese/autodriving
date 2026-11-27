@@ -58,10 +58,10 @@ def normalize_imagenet(x):
     Args:
         x (tensor): input images
     """
-    x = x.clone()
-    x[:, 0] = (x[:, 0] - 0.485) / 0.229
-    x[:, 1] = (x[:, 1] - 0.456) / 0.224
-    x[:, 2] = (x[:, 2] - 0.406) / 0.225
+    x = x.clone().float()
+    x[:, 0] = ((x[:, 0] / 255.0) - 0.485) / 0.229
+    x[:, 1] = ((x[:, 1] / 255.0) - 0.456) / 0.224
+    x[:, 2] = ((x[:, 2] / 255.0) - 0.406) / 0.225
     return x
 
 class LidarEncoder(nn.Module):
@@ -245,7 +245,9 @@ class GPT(nn.Module):
         token_embeddings = token_embeddings.view(bz, -1, self.n_embd) # (B, an * T, C)
 
         # project velocity to n_embed
-        velocity_embeddings = self.vel_emb(velocity)#.unsqueeze(1)) # (B, C)
+        if velocity.dim() == 1:
+            velocity = velocity.unsqueeze(1)
+        velocity_embeddings = self.vel_emb(velocity) # (B, C)
 
         # add (learnable) positional embedding and velocity embedding for all tokens
         x = self.drop(self.pos_emb + token_embeddings + velocity_embeddings.unsqueeze(1)) # (B, an * T, C)
@@ -331,13 +333,21 @@ class Encoder(nn.Module):
         if self.image_encoder.normalize:
             image_list = [normalize_imagenet(image_input) for image_input in image_list]
 
-        bz, _, h, w = lidar_list[0].shape
+        bz = lidar_list[0].shape[0]
         img_channel = image_list[0].shape[1]
         lidar_channel = lidar_list[0].shape[1]
+        image_h, image_w = image_list[0].shape[2:4]
+        lidar_h, lidar_w = lidar_list[0].shape[2:4]
         self.config.n_views = len(image_list) // self.config.seq_len
 
-        image_tensor = torch.stack(image_list, dim=1).view(bz * self.config.n_views * self.config.seq_len, img_channel, h, w)
-        lidar_tensor = torch.stack(lidar_list, dim=1).view(bz * self.config.seq_len, lidar_channel, h, w)
+        image_tensor = torch.stack(image_list, dim=1).view(
+            bz * self.config.n_views * self.config.seq_len,
+            img_channel, image_h, image_w,
+        )
+        lidar_tensor = torch.stack(lidar_list, dim=1).view(
+            bz * self.config.seq_len,
+            lidar_channel, lidar_h, lidar_w,
+        )
 
         image_features = self.image_encoder.features.conv1(image_tensor)
         image_features = self.image_encoder.features.bn1(image_features)
@@ -448,7 +458,7 @@ class transfuser(nn.Module):
         #get hidden state dari gabungan kedua bottleneck
         hx = self.join(fused_features)
         # initial input car location ke GRU, selalu buat batch size x 2 (0,0) (xy)
-        xy = torch.zeros(size=(hx.shape[0], 2)).to(self.config.gpu_device, dtype=hx.dtype)
+        xy = torch.zeros(size=(hx.shape[0], 2), device=hx.device, dtype=hx.dtype)
         #predict delta wp
         out_wp = list()
         for _ in range(self.config.pred_len):

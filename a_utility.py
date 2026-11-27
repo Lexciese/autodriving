@@ -112,26 +112,41 @@ def colorize_depth(depth_map):
     return visdep
 
 def lidar_to_histogram_features(lidar, configx):
-    def splat_points(point_cloud):
-        #128 x 256 grid
-        x_meters_max = int(configx.cover_area_lr)
-        y_meters_max = int((configx.cover_area_f[1] - configx.cover_area_f[0]) / 2)
-        pixels_per_meter = int(configx.bev_w/configx.cover_area_lr)
-        hist_max_per_pixel = 5
-        xbins = np.linspace(-x_meters_max, x_meters_max+1, x_meters_max*pixels_per_meter+1)
-        ybins = np.linspace(-y_meters_max, 0, y_meters_max*pixels_per_meter+1)
-        hist = np.histogramdd(point_cloud[...,:2], bins=(ybins, xbins))[0]
-        hist[hist>hist_max_per_pixel] = hist_max_per_pixel
-        overhead_splat = hist/hist_max_per_pixel
-        return overhead_splat
+    """Convert a LiDAR point cloud into a 2-channel BEV histogram.
 
-    below = lidar[lidar[...,2]<=0] #di bawah atau sama dengan garis 0 horizon lidar
-    above = lidar[lidar[...,2]>0] #di atas garis 0 horizon lidar
+    ``lidar`` must have columns ``(right, forward, up)`` in metres.  The
+    returned array is ``(2, bev_h, bev_w)``: channel 0 contains points at or
+    below the ground plane and channel 1 contains points above it.  Rows are
+    forward and columns are lateral, with the vehicle at the bottom centre.
+    """
+    lat_bins = np.linspace(
+        -configx.cover_area_lr,
+        configx.cover_area_lr,
+        configx.bev_w + 1,
+    )
+    fwd_bins = np.linspace(
+        configx.cover_area_f[0],
+        configx.cover_area_f[1],
+        configx.bev_h + 1,
+    )
+    hist_max_per_pixel = getattr(configx, "hist_max_per_pixel", 5)
+    ground_z = getattr(configx, "lidar_ground_z", 0.0)
+
+    def splat_points(point_cloud):
+        # histogramdd returns (lateral, forward); transpose to (forward, lateral)
+        hist = np.histogramdd(
+            point_cloud[:, [0, 1]],
+            bins=(lat_bins, fwd_bins),
+        )[0]
+        hist = np.clip(hist, 0, hist_max_per_pixel) / float(hist_max_per_pixel)
+        # row 0 = far, last row = near (vehicle at bottom)
+        return np.flipud(hist.T).astype(np.float32)
+
+    below = lidar[lidar[:, 2] <= ground_z]
+    above = lidar[lidar[:, 2] > ground_z]
     below_features = splat_points(below)
     above_features = splat_points(above)
-    features = np.stack([below_features, above_features], axis=-1)
-    features = features.astype(np.float32) #np.transpose(features, (2, 0, 1)).astype(np.float32)
-    return features
+    return np.stack([below_features, above_features], axis=0)
 
 def resize_img(image, resize_w=256, resize_h=128):
     resized_image = cv2.resize(image, (resize_w, resize_h), interpolation=cv2.INTER_NEAREST)
@@ -308,3 +323,64 @@ def bearing_filter(raw_bearing_rad, buffer):
     avg_cos = np.mean(buffer['cos'])
 
     return np.arctan2(avg_sin, avg_cos)
+
+
+def bias_slope(in_angle, bias_start, bias_end, angle_start, angle_end):
+    """Linearly interpolate bias across sector transition boundaries."""
+    if angle_end == angle_start:
+        return bias_start
+    ratio = (in_angle - angle_start) / (angle_end - angle_start)
+    return bias_start + ratio * (bias_end - bias_start)
+
+
+def bearing_biasing(in_angle, bearing_bias):
+    """Apply 6-sector piecewise-linear bias correction to raw IMU yaw (deg)."""
+    if isinstance(bearing_bias, dict):
+        bias_map = bearing_bias.get("bearing_bias_deg", bearing_bias)
+        b0 = bias_map["0 to 60"]
+        b1 = bias_map["60 to 120"]
+        b2 = bias_map["120 to 180"]
+        b3 = bias_map["-180 to -120"]
+        b4 = bias_map["-120 to -60"]
+        b5 = bias_map["-60 to 0"]
+    else:
+        b0, b1, b2, b3, b4, b5 = bearing_bias
+
+    if 0 <= in_angle < 50:
+        bias_x = b0
+    elif 50 <= in_angle < 70:
+        bias_x = bias_slope(in_angle, b0, b1, 50, 70)
+    elif 70 <= in_angle < 110:
+        bias_x = b1
+    elif 110 <= in_angle < 130:
+        bias_x = bias_slope(in_angle, b1, b2, 110, 130)
+    elif 130 <= in_angle < 170:
+        bias_x = b2
+    elif 170 <= in_angle <= 180:
+        bias_x = bias_slope(in_angle, b2, (b2 + b3) / 2.0, 170, 180)
+    elif -180 <= in_angle < -170:
+        bias_x = bias_slope(in_angle, (b2 + b3) / 2.0, b3, -180, -170)
+    elif -170 <= in_angle < -130:
+        bias_x = b3
+    elif -130 <= in_angle < -110:
+        bias_x = bias_slope(in_angle, b3, b4, -130, -110)
+    elif -110 <= in_angle < -70:
+        bias_x = b4
+    elif -70 <= in_angle < -50:
+        bias_x = bias_slope(in_angle, b4, b5, -70, -50)
+    elif -50 <= in_angle < 0:
+        bias_x = b5
+    else:
+        bias_x = 0.0
+
+    biased_angle = in_angle + bias_x
+
+    # Normalize to [-180, 180]
+    if biased_angle > 180:
+        bearing_veh_deg = biased_angle - 360
+    elif biased_angle < -180:
+        bearing_veh_deg = biased_angle + 360
+    else:
+        bearing_veh_deg = biased_angle
+
+    return bearing_veh_deg

@@ -238,7 +238,7 @@ def main():
         print('Created new retrain dir:', config.logdir)
     
     #copykan config file
-    shutil.copyfile('config.py', config.logdir / 'config.py')
+    shutil.copyfile('transfuser_config.py', config.logdir / 'config.py')
 
     #buat dictionary log untuk menyimpan training log di CSV
     log = OrderedDict([

@@ -43,14 +43,14 @@ class GlobalConfig:
     hz = 4  # samples recorded per second
     bias_basic = 15
     # bearing_bias = [-bias_basic, bias_basic, 2*bias_basic+5, bias_basic, -bias_basic+10, -bias_basic]  # per-sector bias (deg): 0-60, 60-120, 120-180, -180--120, -120--60, -60-0
-    bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
-    magnetometer_calib = yaml.safe_load(open(PROJECT_ROOT / "common" / "magnetometer_calib.yaml", "r"))
+    # bearing_bias = [-33.67, 17.70, 36.16, 19.37, -2.66, -36.31]
+    # magnetometer_calib = yaml.safe_load(open(PROJECT_ROOT / "common" / "magnetometer_calib.yaml", "r"))
     rp1_close = 4  # min distance (m) to advance to the next route point
     route_gap_distance = 4  # in meters
     n_buffer = 0  # moving-average buffer (seconds)
 
     # Sequence / waypoints
-    seq_len = 1  # number of input frames
+    seq_len = 3  # number of input frames
     pred_len = 3  # future waypoints predicted
     n_wp = pred_len  # waypoints
     wp_gap = int(1*5)  # frames between waypoints

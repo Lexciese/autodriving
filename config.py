@@ -50,7 +50,7 @@ class GlobalConfig:
     n_buffer = 0  # moving-average buffer (seconds)
 
     # Sequence / waypoints
-    seq_len = 3  # number of input frames
+    seq_len = 1  # number of input frames
     pred_len = 3  # future waypoints predicted
     n_wp = pred_len  # waypoints
     wp_gap = int(1*5)  # frames between waypoints

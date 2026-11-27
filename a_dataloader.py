@@ -332,17 +332,17 @@ class KarrDataset(Dataset):
         data['lat_robot'] = lat_robot
         data['lon_robot'] = lon_robot
 
-        # if self.phase == "train" and random.random() > 0.5:
-        #     for i in range(self.seq_len):
-        #         data['bev_segs'][i] = np.flip(data['bev_segs'][i], axis=-1).copy()
-        #         data['bev_deps'][i] = np.flip(data['bev_deps'][i], axis=-1).copy()
-        #         data['front_segs'][i] = np.flip(data['front_segs'][i], axis=-1).copy()
-        #         data['front_deps'][i] = np.flip(data['front_deps'][i], axis=-1).copy()
-        #         data['rgb'][i] = np.flip(data['rgb'][i], axis=-1).copy()
+        if self.phase == "train" and random.random() > 0.5:
+            for i in range(self.seq_len):
+                data['bev_segs'][i] = np.flip(data['bev_segs'][i], axis=-1).copy()
+                data['bev_deps'][i] = np.flip(data['bev_deps'][i], axis=-1).copy()
+                data['front_segs'][i] = np.flip(data['front_segs'][i], axis=-1).copy()
+                data['front_deps'][i] = np.flip(data['front_deps'][i], axis=-1).copy()
+                data['rgb'][i] = np.flip(data['rgb'][i], axis=-1).copy()
 
-        #     data["waypoints"] = [(-wp[0], wp[1]) for wp in data["waypoints"]]
-        #     data['rp1'] = (-data['rp1'][0], data['rp1'][1])
-        #     data['rp2'] = (-data['rp2'][0], data['rp2'][1])
+            data["waypoints"] = [(-wp[0], wp[1]) for wp in data["waypoints"]]
+            data['rp1'] = (-data['rp1'][0], data['rp1'][1])
+            data['rp2'] = (-data['rp2'][0], data['rp2'][1])
 
         return data
 

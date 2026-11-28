@@ -1,6 +1,7 @@
 import torch
 from torch import cat, nn
 import torchvision.models as models
+import torchvision.transforms as transforms
 import numpy as np
 
 from config import GlobalConfig
@@ -10,6 +11,48 @@ def kaiming_init(m):
         nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
     elif isinstance(m, nn.Linear):
         nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+
+class EncoderBlock(nn.Module):
+    def __init__(self, in_channels, feature_map, is_bev):
+        super().__init__()
+        self.is_bev = is_bev
+        effnet = models.efficientnet_b0(weights=None)
+        effnet.features[0][0] = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=32,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False
+        )
+        self.backbone = effnet.features
+        self.adapter = nn.Sequential(
+            nn.Conv2d(in_channels=1280, out_channels=feature_map[3], kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(feature_map[3]),
+            nn.ReLU()
+        )
+        self.adapter.apply(kaiming_init)
+
+    def forward(self, x):
+        x = self.backbone(x)
+        y = self.adapter(x)
+        return y
+
+class NecksNet(nn.Module):
+    def __init__(self, feature_map):
+        super().__init__()
+        self.conv1x1 = nn.Conv2d(in_channels=2*feature_map[3], out_channels=feature_map[3], kernel_size=1, stride=1, padding=0)
+        self.pool = nn.AdaptiveAvgPool2d(output_size=1)
+        self.flatten = nn.Flatten()
+        self.dense_layer = nn.Linear(in_features=feature_map[3], out_features=feature_map[2])
+
+    def forward(self, x):
+        x = self.conv1x1(x)
+        x = self.pool(x)
+        x = self.flatten(x)
+        y = self.dense_layer(x)
+        return y
+
 
 class ai33(nn.Module):
     def __init__(self, config: GlobalConfig, device):
@@ -25,36 +68,9 @@ class ai33(nn.Module):
         else: # dep
             in_ch = 1
 
-        # BEV EfficientNet Encoder
-        self.bev_encoder = models.efficientnet_b0(weights=None)
-        self.bev_encoder.features[0][0] = nn.Conv2d(
-            in_channels=in_ch, out_channels=32, kernel_size=3, stride=2, padding=1, bias=False
-        )
-        self.bev_encoder.classifier = nn.Sequential()
-        self.bev_encoder.avgpool = nn.Sequential()
-        self.bev_encoder.apply(kaiming_init)
-
-        # Front View EfficientNet Encoder
-        self.fro_encoder = models.efficientnet_b0(weights=None)
-        self.fro_encoder.features[0][0] = nn.Conv2d(
-            in_channels=in_ch, out_channels=32, kernel_size=3, stride=2, padding=1, bias=False
-        )
-        self.fro_encoder.classifier = nn.Sequential()
-        self.fro_encoder.avgpool = nn.Sequential()
-        self.fro_encoder.apply(kaiming_init)
-
-        eff_out_channels = 1280
-
-        self.align_pool = nn.AdaptiveAvgPool2d((4, 8))
-
-        # NecksNet feature fusion sequential block
-        self.necks_net = nn.Sequential(
-            nn.Conv2d(in_channels=2 * eff_out_channels, out_channels=eff_out_channels, kernel_size=1, stride=1, padding=0),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(in_features=eff_out_channels, out_features=feature_map[2])
-        )
-
+        self.bev_encoder_block = EncoderBlock(in_channels=in_ch, feature_map=feature_map, is_bev=True)
+        self.fro_encoder_block = EncoderBlock(in_channels=in_ch, feature_map=feature_map, is_bev=False)
+        self.necks_net = NecksNet(feature_map=feature_map)
         self.gru = nn.GRUCell(input_size=7, hidden_size=feature_map[2])
         self.pred_dwp = nn.Sequential( 
             nn.Linear(feature_map[2], feature_map[1]),
@@ -72,22 +88,17 @@ class ai33(nn.Module):
             elif self.config.inputs == 'seg':
                 bev_in = bev_segs[i]
                 fro_in = front_segs[i]
-            else: # dep
+            else: #dep
                 bev_in = bev_deps[i]
                 fro_in = front_deps[i]
-
-            bev_feat = self.bev_encoder.features(bev_in)
-            fro_feat = self.fro_encoder.features(fro_in)
-
-            # Align spatial shapes to [4, 8] for tensor concatenation
-            bev_feat = self.align_pool(bev_feat)
-            fro_feat = self.align_pool(fro_feat)
-
-            BEV_features_sum += bev_feat
-            FRO_features_sum += fro_feat
+            bev_encoder = self.bev_encoder_block(bev_in)
+            fro_encoder = self.fro_encoder_block(fro_in)
+            if fro_encoder.shape[-2:] != bev_encoder.shape[-2:]:
+                fro_encoder = nn.functional.adaptive_avg_pool2d(fro_encoder, output_size=bev_encoder.shape[-2:])
+            BEV_features_sum += bev_encoder
+            FRO_features_sum += fro_encoder
 
         hx = self.necks_net(cat([BEV_features_sum, FRO_features_sum], dim=1))
-
         xy = torch.zeros(size=(hx.shape[0], 2)).to(self.config.gpu_device, dtype=self.config.dtype)
         out_wp = list()
 
@@ -97,6 +108,6 @@ class ai33(nn.Module):
             d_xy = self.pred_dwp(hx)
             xy = xy + d_xy
             out_wp.append(xy)
-
         pred_wp = torch.stack(out_wp, dim=1)
+
         return pred_wp
